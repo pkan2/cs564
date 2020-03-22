@@ -1,0 +1,14 @@
+.separator |
+.import EbayUsers.dat EbayUsers
+update EbayUsers set Location = null where Location = "NULL";
+update EbayUsers set Country = null where Country = "NULL";
+
+.import Items.dat Items
+update Items set Buy_Price = null where Buy_Price = "NULL";
+
+.import Bids.dat Bids
+
+.import Categories.dat Categories
+
+PRAGMA foreign_keys = ON;
+

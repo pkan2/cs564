@@ -1,0 +1,5 @@
+SELECT COUNT(*)
+FROM(SELECT COUNT(*) as NUM
+FROM Categories
+GROUP BY Categories.ItemID)
+WHERE NUM = 4;

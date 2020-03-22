@@ -1,0 +1,149 @@
+<?xml version="1.0"?>
+<pset>
+
+    <!--
+        CS 564, Spring 2020
+        PROBLEM SET 2 SUBMISSION TEMPLATE
+
+        Please copy and paste your SQL queries (and potentially Python and Latex code) 
+	into the appropriate spots below. 
+
+        When submitting SQL queries, please do not include the intitial 
+        %sql or %%sql IPython commands. Just include the SQL code.
+
+        DO NOT DELETE THE <![CDATA[ ... ]]> LINES IN EACH <answer> TAG!
+        Doing so will break the autograder. To avoid accidentally breaking
+        something, please leave all existing comments in this template
+        intact in your submission.
+    -->
+
+    <student>
+        <name>
+            <!-- Insert your full name on the line below. -->
+            Steven Kan
+        </name>
+        <netid>
+            <!-- Insert your NetID (NOT your student ID number!) below. -->
+            pkan2
+        </netid>
+        <studentid>
+            <!-- Insert your student ID number below. -->
+            9075859844
+        </studentid>
+    </student>
+
+
+    <!-- BEGIN PROBLEM 1 -->
+    <answer number="1a">
+        <!-- Paste your solution to problem 1, part (a) below this line. --><![CDATA[
+
+SELECT hospital.provider as provider, COUNT(*) as count
+FROM hospital
+GROUP BY hospital.provider
+HAVING count > 1;
+
+
+        ]]><!-- End problem 1, part (a). -->
+    </answer>
+    <answer number="1b">
+        <!-- Paste your solution to problem 1, part (b) below this line. --><![CDATA[
+
+SELECT zip, COUNT(*) as count
+FROM(SELECT DISTINCT zip, state, city
+FROM hospital)
+GROUP BY zip
+HAVING count > 1;
+
+
+        ]]><!-- End problem 1, part (b). -->
+    </answer>
+    <!-- END PROBLEM 1 -->
+
+
+    <!-- BEGIN PROBLEM 2 -->
+    <answer number="2a">
+        <!-- Paste your solution to problem 2, part (a) below this line. --><![CDATA[
+
+answer = True
+explanation = "Because, based on the Closure Algorithm, A's closure is {A,D,E,C,F}. Then, based on ARMSTRONG’S AXIOMS 2, the closure of {A,B} is {A,B,C,D,E,F}, which is thet set of all attributes."
+
+        ]]><!-- End problem 2, part (a). -->
+    </answer>
+    <answer number="2b">
+        <!-- Paste your solution to problem 2, part (b) below this line. --><![CDATA[
+
+answer = False
+explanation = "Becuase the final result based on Chase Algorithm is: row 1: A, B, C, D1, E, F; row 2: A2, B2, C, D, E, F2; row 3: A, B3, C, D1, E, F. and since all FDs are satisfied, the Chase Algorithm terminates. However, there does not exist a row with all data without a subscription. Therefore, it is not lossless-join."
+
+        ]]><!-- End problem 2, part (b). -->
+    </answer>    
+    <answer number="2c">
+        <!-- Paste your solution to problem 2, part (c) below this line. --><![CDATA[
+
+answer = False
+explanation = "Because the FDs of ABC is: {A} -> {C}; the FDs of CDE is: {D} -> {C}; the FDs of EFA is {A} -> {E, F}. After enforcing the FDs of each of these subrelations, we cannot logically imply the FD: {A} -> {D} and FD: {D} -> {F} from relation S any more. Thus, it is not dependency preserving."
+
+        ]]><!-- End problem 2, part (c). -->
+    </answer>
+    <answer number="2d">
+        <!-- Paste your solution to problem 2, part (d) below this line. --><![CDATA[
+
+answer = True
+explanation = "Because we have FD: {A} -> {D}, and {D} -> {C}, {D}-> {F}. Therefore, based on ARMSTRONG’S AXIOMS 3, we have {A}->{C} and {A}->{F}. Thus, {A}->{C,F}."
+
+        ]]><!-- End problem 2, part (d). -->
+    </answer>
+    <answer number="2e">
+        <!-- Paste your solution to problem 2, part (e) below this line. --><![CDATA[
+
+answer = False
+explanation = "Bacause {A} -> {D} is a non-trivial FD of S. However, {A} is not a superkey, since the closure of {A}, which is {A,D,E,C,F} from the Closure Algorithm, does not contain B. Therefore, the definition of BCNF is violated."
+
+        ]]><!-- End problem 2, part (e). -->
+    </answer>
+    <!-- END PROBLEM 2 -->
+
+    <!-- BEGIN PROBLEM 3 -->
+    <answer number="3a">
+        <!-- Paste your solution to problem 3, part (a) below this line. --><![CDATA[
+
+$$(\pi_{name}(\sigma_{year="2018"}(JournalArticle)\bowtie Author) - \pi_{name}(\sigma_{year="2018"}(ConferenceArticle) \bowtie Author)) \cap \pi_{name}(\sigma_{affiliation = "UW-Madison"}(Person))$$
+
+        ]]><!-- End problem 3, part (a). -->
+    </answer>
+    <answer number="3b">
+        <!-- Paste your solution to problem 3, part (b) below this line. --><![CDATA[
+
+$$(\pi_{name}(\pi_{articleID}(\sigma_{name = "John Doe"}(Author)) \bowtie Author)) - (\pi_{name}(\sigma_{name = "John Doe"}(Author)))$$
+
+        ]]><!-- End problem 3, part (b). -->
+    </answer>
+    <answer number="3c">
+        <!-- Paste your solution to problem 3, part (c) below this line. --><![CDATA[
+
+$$\gamma_{COUNT(articleID)}((\pi_{articleID}(\sigma_{year = "2018"}(\sigma_{name = "John Doe"}(Author)\bowtie JournalArticle))) \cup (\pi_{articleID}(\sigma_{year = "2018"}(\sigma_{name = "John Doe"}(Author)\bowtie ConferenceArticle))))$$
+
+        ]]><!-- End problem 3, part (c). -->
+    </answer>
+    <answer number="3d">
+    <!-- Paste your solution to problem 3, part (d) below this line. --><![CDATA[
+
+$$EffectiveYears = \pi_{year}((\sigma_{year >= 2000}(JournalArticle)) \cup ((\sigma_{year <= 2018}(JournalArticle))))$$
+$$AuthorConferenceInfo = \rho_{COUNT(articleID)-> ConferenceCount}(\gamma_{name, year, COUNT(articleID)}(Arthor \bowtie ConferenceArticle))$$
+$$AuthorJournalInfo = \rho_{COUNT(articleID)-> JournalCount}(\gamma_{name, year, COUNT(articleID)}(Arthor \bowtie JournalArticle))$$
+$$AuthorYearsWithBothConferenceAndJournal = AuthorConferenceInfo \bowtie AuthorJournalInfo$$
+$$ResultAuthorYear = \pi_{name, year}(\sigma_{CounferenceCount >= JournalCount}(AuthorYearsWithBothConferenceAndJournal))$$
+$$AuthorYearsWithConference = \pi_{name, year}(AuthorConferenceInfo)$$
+$$AuthorYearsWithJournal = \pi_{name, year}(AuthorJournalInfo)$$
+$$TotalPersonYears = \pi_{name, year}(Person \times EffectiveYears)$$
+$$PersonYearsNoConference = TotalPersonYears - AuthorYearsWithConference$$
+$$PersonYearsNoJournal = TotalPersonYears - AuthorYearsWithJournal$$
+$$ResultAuthorYear = ResultAuthorYear \cup (PersonYearsNoConference \cap PersonYearsNoJournal)$$
+$$ResultAuthorYear = ResultAuthorYear \cup (AuthorYearsWithConference - PersonYearsNoJournal)$$
+$$Result = ResultAuthorYear / EffectiveYears$$
+
+        ]]><!-- End problem 3, part (d). -->
+    </answer>
+    <!-- END PROBLEM 3 -->
+
+</pset>
