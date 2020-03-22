@@ -1,0 +1,38 @@
+################################################################################
+# BadgerDB quick start guide                                                   #
+################################################################################
+
+################################################################################
+# Building the source and documentation                                        #
+################################################################################
+
+To build the source:
+  $ make
+
+To build the real API documentation (requires Doxygen):
+  $ make doc
+
+To view the documentation, open docs/index.html in your web browser after
+running make doc.
+
+################################################################################
+# Prerequisites                                                                #
+################################################################################
+
+You need:
+ * a very modern C++ compiler in order to enjoy C++ features up to C++17
+  * GCC version 7 or higher, 5 or higher if you don't need C++17.
+  * clang version 7 or higher, 3.4 higher if you don't need C++17.
+  * Apple users: Xcode 10 or higher
+ * doxygen (version 1.4 or higher)
+
+
+################################################################################
+# Notes for Apple Users                                                        #
+################################################################################
+
+If you are using Apple's stock clang compiler. Your code may behave a bit differently on a Linux machine, which may result in failure to compile.
+
+To avoid this:
+* When you found a standard library function, make sure to INCLUDE THE CORRESPONDING HEADER FILE(just like importing the package in Java). Apple clang let go of it, but you should not rely on it.
+* When your code is done and OK on a Mac, run it on a Linux machine.
