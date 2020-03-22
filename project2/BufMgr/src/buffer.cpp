@@ -64,6 +64,7 @@ void BufMgr::advanceClock()
     clockHand = (clockHand + 1) % numBufs;
 }
 
+#This method has been modified.
 void BufMgr::allocBuf(FrameId & frame) 
 {
     FrameId initialClockHand = clockHand;
@@ -81,6 +82,7 @@ void BufMgr::allocBuf(FrameId & frame)
     throw BufferExceededException();
 }
 
+#This method is the helper method we defined.
 void BufMgr::allocBufHelper(FrameId & frame)
 {
     if (bufDescTable[clockHand].valid == false){

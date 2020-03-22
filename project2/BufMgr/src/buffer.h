@@ -197,7 +197,15 @@ class BufMgr
 	 * @throws BufferExceededException If no such buffer is found which can be allocated
 	 */
   void allocBuf(FrameId & frame);
-
+   
+    /**
+    * Helper method for allocBuf function.
+    *
+    * @param frame       Frame reference, frame ID of allocated frame returned via this variable
+    * @return True if current clockHand is pointing an available frame. False if the frame currently pointed to
+    * by the clockHand is unavailable.
+    */
+  bool allocBufHelper(FrameId & frame);
  public:
 	/**
    * Actual buffer pool from which frames are allocated
