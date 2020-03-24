@@ -224,20 +224,20 @@ void BufMgr::flushFile(const File* file)
     // to the specified file
     for(FrameId i = 0; i < numBufs; ++i){
         if (bufDescTable[i].file == file){
+            PageId pageNo = bufDescTable[i].pageNo;
+            // deal with the exception situation
+            if(bufDescTable[i].pinCnt != 0){
+                // throws PagePinnedException if some page of the file is pinned
+                throw PagePinnedException(file -> filename(), pageNo, i);
+            }
+            if(bufDescTable[i].valid == false){
+                // throws BadBufferException if an invalid page
+                // belonging to the file is encountered
+                throw BadBufferException(i, bufDescTable[i].dirty,
+                        bufDescTable[i].valid, bufDescTable[i].refbit);
+            }
             // a) if the page is dirty
             if (bufDescTable[i].dirty == true){
-                PageId pageNo = bufDescTable[i].pageNo;
-                // deal with the exception situation
-                if(bufDescTable[i].pinCnt != 0){
-                    // throws PagePinnedException if some page of the file is pinned
-                    throw PagePinnedException(file -> filename(), pageNo, i);
-                }
-                if(bufDescTable[i].valid == false){
-                    // throws BadBufferException if an invalid page
-                    // belonging to the file is encountered
-                    throw BadBufferException(i, bufDescTable[i].dirty,
-                            bufDescTable[i].valid, bufDescTable[i].refbit);
-                }
                 Page page = bufPool[i];
                 bufStats.accesses++;
                 // flush the page to the disk
