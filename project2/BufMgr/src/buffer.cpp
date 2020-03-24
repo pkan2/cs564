@@ -48,7 +48,7 @@ BufMgr::~BufMgr() {
             bufStats.diskwrites++;
             bufDescTable[i].dirty = false;
             hashTable -> remove(file, pageNo);
-            bufDescTable[i].clear();
+            bufDescTable[i].Clear();
         }
     }
 //deallocates the buffer pool
@@ -75,16 +75,16 @@ void BufMgr::advanceClock()
 void BufMgr::allocBuf(FrameId & frame) 
 {
     //the number of frames in the bufpool has been pinned
-    int count=0;
-    bool allocated=false;
-    while(count< (int)numBufs)
+    int count = 0;
+    bool allocated = false;
+    while(count < (int)numBufs)
     {
        //begin using the clock algorithm
        if(bufDescTable[clockHand].valid == true)
        {
           if(bufDescTable[clockHand].refbit == false)
           {
-            if(bufDescTable[clockHand].pinCnt==0)
+            if(bufDescTable[clockHand].pinCnt == 0)
             {
               if(bufDescTable[clockHand].dirty == false)
               {
@@ -98,7 +98,7 @@ void BufMgr::allocBuf(FrameId & frame)
                  bufDescTable[clockHand].file->writePage(bufPool[clockHand]);
                  bufStats.accesses++;
                  hashTable->remove(bufDescTable[clockHand].file, bufDescTable[clockHand].pageNo);
-                 bufDescTable[clockHand].clear();
+                 bufDescTable[clockHand].Clear();
                  allocated = true;
                  frame = clockHand;
                  bufStats.diskwrites++;
@@ -156,7 +156,7 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
         bufDescTable[frame].pinCnt++;
         bufStats.accesses++;
         //return a pointer to the frame containing the page 
-        page=&bufPool[frame];
+        page = &bufPool[frame];
     }
     catch(HashNotFoundException e)
     {
@@ -167,7 +167,7 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
         //call the method to read the page from disk into the buffer pool
         Page TargetPage = file->readPage(pageNo);
         bufStats.disreads++;
-        bufPool[frame]=TargetPage;
+        bufPool[frame] = TargetPage;
         //insert the page into the hashtable
         hashTable->insert(file, pageNo, frame);
         page = &bufPool[frame];
@@ -240,7 +240,7 @@ void BufMgr::flushFile(const File* file)
             //c) invoke the Clear() method of BufDesc for the page frame
             bufDescTable[i].Clear();
             //deal with the exception situation
-            if(bufDescTable[i].pinCnt!=0) 
+            if(bufDescTable[i].pinCnt != 0)
             {
               //throws PagePinnedException if some page of the file is pinned
               throw PagePinnedException(file->filename(),bufDescTable[i].pageNo,frame);
@@ -270,7 +270,7 @@ void BufMgr::allocPage(File* file, PageId &pageNo, Page*& page)
     FrameId frame;
     //call allocBuf to obtain a buffer pool frame
     allocBuf(frame);
-    bufPool[frame]=emptyPage;// may not need
+    bufPool[frame] = emptyPage;// may not need
     bufStats.accesses++;
     page = &bufPool[frame];//may not need
     //an entry is inserted into the hashtable
@@ -291,11 +291,17 @@ void BufMgr::disposePage(File* file, const PageId PageNo)
    try
     {
         FrameId frame;
-        hashTable->lookup(file,PageNo,frame);
+        hashTable->lookup(file, PageNo, frame);
+        // Based on the question @316 on Piazza, there is no need to check
+        // for the pin count.
+        // The link is as followed:
+        //      https://piazza.com/class/k5o4pp0u8fd5fw?cid=316
+        /*
         if(bufDescTable[frame].pinCnt != 0) 
         {
           throw PagePinnedException(bufDescTable[frame].file->filename(), bufDescTable[frame].pageNo, bufDescTable[frame].frameNo);
         }
+         */
         //free the frame
         bufDescTable[frame].Clear();
         //the correspondingly entry is removed from the hashTable
@@ -303,6 +309,9 @@ void BufMgr::disposePage(File* file, const PageId PageNo)
     }
     catch (HashNotFoundException e)
     {
+        // Does nothing in this case, since this case is simply when the
+        // deleting page is not allocated with a frame in the buffer pool.
+        // And we need to do nothing in this case then.
     }
     //deleting the page from file
     file->deletePage(PageNo);  
