@@ -109,9 +109,9 @@ void BufMgr::allocBufHelper(FrameId & frame)
                     bufStats.accesses++;
                     Page newPage = bufPool[clockHand];
                     file -> writePage(newPage);
+                    bufStats.diskwrites++;
                     hashTable -> remove(file, pageNo);
                     bufDescTable[clockHand].clear();
-                    bufStats.diskwrites++;
                     frame = clockHand;
                     return true;
                 }
@@ -120,9 +120,30 @@ void BufMgr::allocBufHelper(FrameId & frame)
     }
     return false;
 }
-	
+
+#This method has been modified.
 void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
 {
+    int FrameNo = 0;
+    try{
+        hashTable.lookup(file, pageNo, FrameNo);
+    }
+    catch(HashNotFoundException& e){
+        allocBuf(FrameNo);
+        readPage = file.readPage(pageNo);
+        bufStats.disreads++;
+        hashTable.insert(file, pageNo, FrameNo);
+        bufDescTable[frameNo].set(file, pageNo);
+        bufPool[frameNo] = readPage;
+        bufStats.accesses++;
+        page = &bufPool[frameNo];
+        return;
+    }
+    bufDescTable[frameNo].refbit = true;
+    bufDescTable[frameNo].pinCnt++;
+    bufStats.accesses++;
+    page = &bufPool[frameNo];
+    return;
 }
 
 
