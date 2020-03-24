@@ -43,8 +43,12 @@ BufMgr::~BufMgr() {
             File* thisFile = bufDescTable[i].file;
             PageId thisPageNo = bufDescTable[i].pageNo;
             Page thisPage = bufPool[thisPageNo];
+            bufStats.accesses++;
             thisFile -> writePage(thisPage);
             bufStats.diskwrites++;
+            bufDescTable[i].dirty = false;
+            hashTable -> remove(file, pageNo);
+            bufDescTable[i].clear();
         }
     }
 //deallocates the buffer pool
@@ -92,7 +96,9 @@ void BufMgr::allocBuf(FrameId & frame)
               {
                  //flush page to disk
                  bufDescTable[clockHand].file->writePage(bufPool[clockHand]);
-                 hashTable->remove(bufDescTable[clockHand].file, bufDescTable[clockHand].pageNo); 
+                 bufStats.accesses++;
+                 hashTable->remove(bufDescTable[clockHand].file, bufDescTable[clockHand].pageNo);
+                 bufDescTable[clockHand].clear();
                  allocated = true;
                  frame = clockHand;
                  bufStats.diskwrites++;
@@ -148,23 +154,25 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
         bufDescTable[frame].refbit=true;
         //increment the pinCnt for the page
         bufDescTable[frame].pinCnt++;
+        bufStats.accesses++;
         //return a pointer to the frame containing the page 
         page=&bufPool[frame];
     }
     catch(HashNotFoundException e)
     {
         //Case2: Page is not in the buffer pool
-        FrameId  frame;
+        FrameId frame;
         //call allocBuf() to allocate a buffer frame
         allocBuf(frame);  
         //call the method to read the page from disk into the buffer pool
         Page TargetPage = file->readPage(pageNo);
+        bufStats.disreads++;
         bufPool[frame]=TargetPage;
         //insert the page into the hashtable
-        hashTable->insert(file,pageNo,frame);
-        page=&bufPool[frame];
+        hashTable->insert(file, pageNo, frame);
+        page = &bufPool[frame];
         //invoke Set() on the frame to set it up properly
-        bufDescTable[frame].Set(file,pageNo);       
+        bufDescTable[frame].Set(file, pageNo);
     }
 }
 
