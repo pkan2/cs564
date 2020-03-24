@@ -235,7 +235,8 @@ void BufMgr::flushFile(const File* file)
                 if(bufDescTable[i].valid == false){
                     // throws BadBufferException if an invalid page
                     // belonging to the file is encountered
-                    throw BadBufferException(i, bufDescTable[i].dirty, bufDescTable[i].valid, bufDescTable[i].refbit);
+                    throw BadBufferException(i, bufDescTable[i].dirty,
+                            bufDescTable[i].valid, bufDescTable[i].refbit);
                 }
                 Page page = bufPool[i];
                 bufStats.accesses++;
@@ -304,7 +305,7 @@ void BufMgr::disposePage(File* file, const PageId PageNo)
         //free the frame
         bufDescTable[frame].Clear();
         //the correspondingly entry is removed from the hashTable
-        hashTable->remove(file,PageNo);       
+        hashTable->remove(file, PageNo);
     }
     catch (HashNotFoundException e)
     {
