@@ -69,7 +69,7 @@ void BufMgr::advanceClock()
 /**
  * Allocate a free frame.
  *
- * @param frame   	Frame reference, frame ID of allocated frame returned via this variable
+ * @param frame   Frame reference, frame ID of allocated frame returned via this variable
  * @throws BufferExceededException If no such buffer is found which can be allocated
  */
 void BufMgr::allocBuf(FrameId & frame) 
@@ -149,7 +149,7 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
     {
         //Case1: Page is in the buffer pool
         FrameId frame;
-        hashTable->lookup(file, pageNo, frame);
+        hashTable -> lookup(file, pageNo, frame);
         //set the appropriate refbit 
         bufDescTable[frame].refbit=true;
         //increment the pinCnt for the page
@@ -165,7 +165,7 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
         //call allocBuf() to allocate a buffer frame
         allocBuf(frame);  
         //call the method to read the page from disk into the buffer pool
-        Page TargetPage = file->readPage(pageNo);
+        Page TargetPage = file -> readPage(pageNo);
         bufStats.diskreads++;
         bufPool[frame] = TargetPage;
         //insert the page into the hashtable
@@ -181,7 +181,7 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
  *
  * @param file   	File object
  * @param PageNo  Page number
- * @param dirty		True if the page to be unpinned needs to be marked dirty
+ * @param dirty  True if the page to be unpinned needs to be marked dirty
  * @throws  PageNotPinnedException If the page is not already pinned
  */
 void BufMgr::unPinPage(File* file, const PageId pageNo, const bool dirty) 
@@ -189,11 +189,11 @@ void BufMgr::unPinPage(File* file, const PageId pageNo, const bool dirty)
   try
     {
         FrameId frame;
-        hashTable->lookup(file, pageNo, frame);
+        hashTable -> lookup(file, pageNo, frame);
         //if the pin count is 0, throws PAGENOTPINNED
         if (bufDescTable[frame].pinCnt == 0)
         {
-          throw PageNotPinnedException(file->filename(), pageNo, frame);
+          throw PageNotPinnedException(file -> filename(), pageNo, frame);
         } 
         //decrements the pinCnt of the frame containing (file,PageNo)
         bufDescTable[frame].pinCnt--;
@@ -265,7 +265,7 @@ void BufMgr::flushFile(const File* file)
 void BufMgr::allocPage(File* file, PageId &pageNo, Page*& page) 
 {
     //allocate an empty page in the specified file
-    Page emptyPage = file->allocatePage();
+    Page emptyPage = file -> allocatePage();
     pageNo = emptyPage.page_number();
     FrameId frame;
     //call allocBuf to obtain a buffer pool frame
@@ -274,7 +274,7 @@ void BufMgr::allocPage(File* file, PageId &pageNo, Page*& page)
     bufStats.accesses++;
     page = &bufPool[frame];//may not need
     //an entry is inserted into the hashtable
-    hashTable->insert(file, pageNo, frame);
+    hashTable -> insert(file, pageNo, frame);
     //invoke set() to set the table up properly
     bufDescTable[frame].Set(file, pageNo);
 }
@@ -291,7 +291,7 @@ void BufMgr::disposePage(File* file, const PageId PageNo)
    try
     {
         FrameId frame;
-        hashTable->lookup(file, PageNo, frame);
+        hashTable -> lookup(file, PageNo, frame);
         // Based on the question @316 on Piazza, there is no need to check
         // for the pin count.
         // The link is as followed:
@@ -305,7 +305,7 @@ void BufMgr::disposePage(File* file, const PageId PageNo)
         //free the frame
         bufDescTable[frame].Clear();
         //the correspondingly entry is removed from the hashTable
-        hashTable->remove(file, PageNo);
+        hashTable -> remove(file, PageNo);
     }
     catch (HashNotFoundException e)
     {
