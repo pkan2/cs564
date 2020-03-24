@@ -47,7 +47,7 @@ BufMgr::~BufMgr() {
             thisFile -> writePage(thisPage);
             bufStats.diskwrites++;
             bufDescTable[i].dirty = false;
-            hashTable -> remove(file, pageNo);
+            hashTable -> remove(thisFile, thisPageNo);
             bufDescTable[i].Clear();
         }
     }
@@ -166,7 +166,7 @@ void BufMgr::readPage(File* file, const PageId pageNo, Page*& page)
         allocBuf(frame);  
         //call the method to read the page from disk into the buffer pool
         Page TargetPage = file->readPage(pageNo);
-        bufStats.disreads++;
+        bufStats.diskreads++;
         bufPool[frame] = TargetPage;
         //insert the page into the hashtable
         hashTable->insert(file, pageNo, frame);
@@ -222,7 +222,7 @@ void BufMgr::flushFile(const File* file)
 {
     // iterate through the bufTable and look for the pages belonging
     // to the specified file
-    for(FrameId i = 0; i < bufs; ++i){
+    for(FrameId i = 0; i < numBufs; ++i){
         if (bufDescTable[i].file == file){
             // a) if the page is dirty
             if (bufDescTable[i].dirty == true){
@@ -241,7 +241,7 @@ void BufMgr::flushFile(const File* file)
                 Page page = bufPool[i];
                 bufStats.accesses++;
                 // flush the page to the disk
-                file -> writePage(page);
+                bufDescTable[i].file -> writePage(page);
                 bufStats.diskwrites++;
                 // set the dirty bit for the page to false
                 bufDescTable[i].dirty = false;
