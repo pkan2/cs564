@@ -74,10 +74,12 @@ void BufMgr::advanceClock()
  */
 void BufMgr::allocBuf(FrameId & frame) 
 {
-    //the number of frames in the bufpool has been pinned
+    // the count of times for clockHand being advanced
     int count = 0;
     bool allocated = false;
-    while(count < (int)numBufs)
+    // in order to find an empty spot, we at most need to traverse the whole
+    // clock for two rounds.
+    while(count < (int)numBufs * 2)
     {
        //begin using the clock algorithm
        if(bufDescTable[clockHand].valid == true)
@@ -117,6 +119,7 @@ void BufMgr::allocBuf(FrameId & frame)
             //refbit has been set,clear refbit
             bufDescTable[clockHand].refbit= false;
             advanceClock();
+            count++;
           }
        }
        else
