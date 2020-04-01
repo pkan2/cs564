@@ -60,6 +60,7 @@ void test5();
 void test6();
 void extra_test1();
 void extra_test2();
+void extra_test3();
 void testBufMgr();
 
 int main() 
@@ -176,6 +177,7 @@ void testBufMgr()
 	fork_test(test6);
     fork_test(extra_test1);
     fork_test(extra_test2);
+    fork_test(extra_test3);
 
 	//Close files before deleting them
 	file1.close();
@@ -380,4 +382,33 @@ void extra_test2()
     }
 
     std::cout << "Extra Test 2 passed" << "\n";
+}
+
+void extra_test3()
+{
+  //Checks has the page been disposed from the file correctly
+   //Allocating pages in a file...
+ for (i = 0; i < num; i++)
+ {
+  bufMgr->allocPage(file1ptr, pid[i], page);
+  sprintf((char*)tmpbuf, "test.1 Page %d %7.1f", pid[i], (float)pid[i]);
+  rid[i] = page->insertRecord(tmpbuf);
+  bufMgr->unPinPage(file1ptr, pid[i], true);
+ }
+ //dispose pages
+ for (i = 0; i < num; i++)
+ {
+    bufMgr->disposePage(file1ptr, pid[i]);
+    try
+    {
+      file1ptr->readPage(pid[i]);
+      PRINT_ERROR("ERROR :: Pages has not been disposed from the file. Exception should have been thrown before execution reaches this point.");
+    }
+    catch(InvalidPageException &e)
+    {
+    
+    }
+ }
+ std::cout<< "Extra Test 3 passed" << "\n";
+  
 }
