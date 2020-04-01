@@ -386,29 +386,29 @@ void extra_test2()
 
 void extra_test3()
 {
-  //Checks has the page been disposed from the file correctly
-   //Allocating pages in a file...
- for (i = 0; i < num; i++)
- {
-  bufMgr->allocPage(file1ptr, pid[i], page);
-  sprintf((char*)tmpbuf, "test.1 Page %d %7.1f", pid[i], (float)pid[i]);
-  rid[i] = page->insertRecord(tmpbuf);
-  bufMgr->unPinPage(file1ptr, pid[i], true);
- }
- //dispose pages
- for (i = 0; i < num; i++)
- {
-    bufMgr->disposePage(file1ptr, pid[i]);
-    try
+    // Checks has the page been disposed from the file correctly
+    //Allocating pages in a file...
+    for (i = 0; i < num; i++)
     {
-      file1ptr->readPage(pid[i]);
-      PRINT_ERROR("ERROR :: Pages has not been disposed from the file. Exception should have been thrown before execution reaches this point.");
+        bufMgr->allocPage(file1ptr, pid[i], page);
+        sprintf((char*)tmpbuf, "test.1 Page %d %7.1f", pid[i], (float)pid[i]);
+        rid[i] = page->insertRecord(tmpbuf);
+        bufMgr->unPinPage(file1ptr, pid[i], true);
     }
-    catch(InvalidPageException &e)
+    //dispose pages
+    for (i = 0; i < num; i++)
     {
-    
+        bufMgr->disposePage(file1ptr, pid[i]);
+        try
+        {
+            file1ptr->readPage(pid[i]);
+            PRINT_ERROR("ERROR :: Pages has not been disposed from the file. Exception should have been thrown before execution reaches this point.");
+        }
+        catch(InvalidPageException &e)
+        {
+        
+        }
     }
- }
- std::cout<< "Extra Test 3 passed" << "\n";
+    std::cout<< "Extra Test 3 passed" << "\n";
   
 }
