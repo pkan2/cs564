@@ -59,6 +59,7 @@ void test4();
 void test5();
 void test6();
 void extra_test1();
+void extra_test2();
 void testBufMgr();
 
 int main() 
@@ -174,6 +175,7 @@ void testBufMgr()
 	fork_test(test5);
 	fork_test(test6);
     fork_test(extra_test1);
+    fork_test(extra_test2);
 
 	//Close files before deleting them
 	file1.close();
@@ -341,11 +343,11 @@ void test6()
 
 void extra_test1()
 {
-    //Checks the case when an invalid page is accessed
+    // Check the case when an invalid page is accessed
     try
     {
         bufMgr->readPage(file1ptr, 101, page);
-        PRINT_ERROR("ERROR :: Pages pinned for file being flushed. Exception should have been thrown before execution reaches this point.");
+        PRINT_ERROR("ERROR :: An Invalid page is being read. Exception should have been thrown before execution reaches this point.");
     }
     catch(InvalidPageException e)
     {
@@ -353,4 +355,29 @@ void extra_test1()
     }
 
     std::cout << "Extra Test 1 passed" << "\n";
+}
+
+void extra_test2()
+{
+    // Check the case where we flush file with pages unpinned.
+    // There should not generate an error.
+    
+    //Allocating pages in a file...
+    for (i = 0; i < num; i++)
+    {
+        bufMgr->allocPage(file1ptr, pid[i], page);
+        sprintf((char*)tmpbuf, "test.1 Page %d %7.1f", pid[i], (float)pid[i]);
+        rid[i] = page->insertRecord(tmpbuf);
+        bufMgr->unPinPage(file1ptr, pid[i], true);
+    }
+    try
+    {
+        bufMgr->flushFile(file1ptr);
+    }
+    catch(PagePinnedException e)
+    {
+        PRINT_ERROR("ERROR :: All Pages are Unpinned Already. PagePinnedException should have not been thrown.");
+    }
+
+    std::cout << "Extra Test 2 passed" << "\n";
 }
