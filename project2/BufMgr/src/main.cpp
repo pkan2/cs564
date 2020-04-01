@@ -347,7 +347,7 @@ void extra_test1()
     try
     {
         bufMgr->readPage(file1ptr, 101, page);
-        PRINT_ERROR("ERROR :: An Invalid page is being read. Exception should have been thrown before execution reaches this point.");
+        PRINT_ERROR("ERROR :: An invalid page is being read. Exception should have been thrown before execution reaches this point.");
     }
     catch(InvalidPageException e)
     {
@@ -376,7 +376,7 @@ void extra_test2()
     }
     catch(PagePinnedException e)
     {
-        PRINT_ERROR("ERROR :: All Pages are Unpinned Already. PagePinnedException should have not been thrown.");
+        PRINT_ERROR("ERROR :: All pages are Unpinned already. PagePinnedException should have not been thrown.");
     }
 
     std::cout << "Extra Test 2 passed" << "\n";
