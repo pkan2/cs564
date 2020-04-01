@@ -273,9 +273,9 @@ void BufMgr::allocPage(File* file, PageId &pageNo, Page*& page)
     FrameId frame;
     //call allocBuf to obtain a buffer pool frame
     allocBuf(frame);
-    bufPool[frame] = emptyPage;// may not need
+    bufPool[frame] = emptyPage;
     bufStats.accesses++;
-    page = &bufPool[frame];//may not need
+    page = &bufPool[frame];
     //an entry is inserted into the hashtable
     hashTable -> insert(file, pageNo, frame);
     //invoke set() to set the table up properly
