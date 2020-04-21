@@ -251,7 +251,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         // since the scaning is complete, we should
         // unpin this current page.
         try{
-        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+            this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
         }
         catch(PageNotPinnedException e){
         }
