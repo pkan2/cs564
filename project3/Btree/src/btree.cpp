@@ -25,7 +25,22 @@ namespace badgerdb
 // -----------------------------------------------------------------------------
 // BTreeIndex::BTreeIndex -- Constructor
 // -----------------------------------------------------------------------------
-
+/**
+ * Constructor
+ *
+ * The constructor first checks if the specified index ?le exists.
+ * And index ?le name is constructed by concatenating the relational name with
+ * the offset of the attribute over which the index is built.
+ *
+ * If the index ?le exists, the ?le is opened. 
+ * Else, a new index ?le is created.
+ *
+ * @param relationName The name of the relation on which to build the index. 
+ * @param outIndexName The name of the index ?le
+ * @param bufMgrIn The instance of the global buffer manager.
+ * @param attrByteOffset The byte offset of the attribute in the tuple on which to build the index.
+ * @param attrType The data type of the attribute we are indexing.
+ */
 BTreeIndex::BTreeIndex(const std::string & relationName,
 		std::string & outIndexName,
 		BufMgr *bufMgrIn,
@@ -151,15 +166,21 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 // -----------------------------------------------------------------------------
 // BTreeIndex::~BTreeIndex -- destructor
 // -----------------------------------------------------------------------------
-
+/**
+ * Destructor
+ * Perform any cleanup that may be necessary, 
+ * including clearing up any state variables,
+ * unpinning any B+ Tree pages that are pinned, 
+ * and flushing the index file (by calling bufMgr->flushFile()).
+ *
+ * Note that this method does not delete the index file! 
+ * But, deletion of the file object is required, 
+ * which will call the destructor of File class causing the index file to be closed.
+ */
 BTreeIndex::~BTreeIndex()
 {
     // end all scans
-    try{
-        endScan();
-    }
-    catch(ScanNotInitializedException e){
-    }
+    if(scanExecuting) endScan();
     // unpin all the pages from the index file, i.e. BlobFile
     // Flush this index file
     // the unpin process can be guaranteed by the endScan method already
@@ -171,16 +192,36 @@ BTreeIndex::~BTreeIndex()
 // -----------------------------------------------------------------------------
 // BTreeIndex::insertEntry
 // -----------------------------------------------------------------------------
-
+/**
+ * Insert a new entry using the pair <value,rid>.
+ * @param key			A pointer to the value(integer we want to insert)
+ * @param rid			The corresponding record id of the tuple in the base relation
+ **/
 const void BTreeIndex::insertEntry(const void *key, const RecordId rid) 
 {
+  int midval;
+  PageId pid = insert(indexMetaInfo.rootPageNo, *(int *)key, rid, midval);
 
+  if (pid != 0)
+    indexMetaInfo.rootPageNo = splitRoot(midval, indexMetaInfo.rootPageNo, pid);
 }
 
 // -----------------------------------------------------------------------------
 // BTreeIndex::startScan
 // -----------------------------------------------------------------------------
-
+/**
+ *
+ * This method is used to begin a filtered scan¡± of the index.
+ *
+ * For example, if the method is called using arguments (1,GT,100,LTE), then
+ * the scan should seek all entries greater than 1 and less than or equal to
+ * 100.
+ *
+ * @param lowValParm The low value to be tested.
+ * @param lowOpParm The operation to be used in testing the low range.
+ * @param highValParm The high value to be tested.
+ * @param highOpParm The operation to be used in testing the high range.
+ */
 const void BTreeIndex::startScan(const void* lowValParm,
 				   const Operator lowOpParm,
 				   const void* highValParm,
@@ -236,7 +277,22 @@ const void BTreeIndex::startScan(const void* lowValParm,
 // -----------------------------------------------------------------------------
 // BTreeIndex::scanNext
 // -----------------------------------------------------------------------------
-
+/**
+ * This method fetches the record id of the next tuple that matches the scan
+ * criteria. If the scan has reached the end, then it should throw the
+ * following exception: IndexScanCompletedException.
+ *
+ * For instance, if there are two data entries that need to be returned in a
+ * scan, then the third call to scanNext must throw
+ * IndexScanCompletedException. A leaf page that has been read into the buffer
+ * pool for the purpose of scanning, should not be unpinned from buffer pool
+ * unless all records from it are read or the scan has reached its end. Use
+ * the right sibling page number value from the current leaf to move on to the
+ * next leaf which holds successive key values for the scan.
+ *
+ * @param outRid An output value;This is the record id of the next entry
+ *                that matches the scan filter set in startScan.
+ */
 const void BTreeIndex::scanNext(RecordId& outRid) 
 {
     // throws ScanNotInitializedException
@@ -357,6 +413,12 @@ const void BTreeIndex::scanNext(RecordId& outRid)
 // BTreeIndex::endScan
 // -----------------------------------------------------------------------------
 //
+/**
+ * This method terminates the current scan and unpins all the pages that have
+ * been pinned for the purpose of the scan.
+ * It throws ScanNotInitializedException when called before a successful
+ * startScan call.
+ */
 const void BTreeIndex::endScan() 
 {
     // the case where there is no scan being initialized.
