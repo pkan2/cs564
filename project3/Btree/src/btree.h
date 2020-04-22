@@ -145,6 +145,11 @@ struct NonLeafNodeInt{
    * Level of the node in the tree.
    */
 	int level;
+    
+/**
+ * Variable to keep track of amount of slots being taken up in the node
+ */
+    int slotTaken;
 
   /**
    * Stores keys.
@@ -162,6 +167,10 @@ struct NonLeafNodeInt{
  * @brief Structure for all leaf nodes when the key is of INTEGER type.
 */
 struct LeafNodeInt{
+  /**
+   * Variable to keep track of amount of slots being taken up in the node
+  */
+   int slotTaken;
   /**
    * Stores keys.
    */
@@ -207,6 +216,11 @@ class BTreeIndex {
    * page number of root page of B+ tree inside index file.
    */
 	PageId	rootPageNum;
+    
+    /**
+     * Variable to record where the current root is a leafnode or not
+     */
+    bool rootIsLeaf;
 
   /**
    * Datatype of attribute over which index is built.
