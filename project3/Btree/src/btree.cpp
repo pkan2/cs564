@@ -69,7 +69,7 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
             this -> leafOccupancy = (Page::SIZE - sizeof(PageId)) / (sizeof(char[64]) + sizeof(RecordId));
             break;
     }
-    
+
     // initialize all the variables for the scanning:
     this -> lowValInt = -1;
     this -> highValInt = -1;
@@ -172,27 +172,6 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
     }
     delete fileScan;
 
-    // code below is for debugging
-    /*
-     std::cout << "leafOccupancy: " << this -> leafOccupancy << "\n";
-    std::cout << "finish reading the input file\n";
-    Page * currRootPage;
-    this -> bufMgr -> readPage(this -> file, this -> rootPageNum, currRootPage);
-    if(this -> rootIsLeaf == false){
-        NonLeafNodeInt * rootPageNode = ( NonLeafNodeInt*) currRootPage;
-        std::cout << "root is not leaf\n";
-        std::cout << "root content taken: " << rootPageNode -> slotTaken << "\n";
-        std::cout << "root content: " << rootPageNode -> keyArray[1] << "\n";
-        this -> bufMgr -> unPinPage(this -> file, this -> rootPageNum,false);
-    }
-    else{
-        LeafNodeInt * rootPageNode = (LeafNodeInt*) currRootPage;
-        std::cout << "root is leaf\n";
-        std::cout << "root content taken: " << rootPageNode -> slotTaken << "\n";
-        std::cout << "root content: " << rootPageNode- >keyArray[0] << "\n";
-        this -> bufMgr -> unPinPage(this -> file, this -> rootPageNum,false);
-    }
-     */
 }
 
 
@@ -259,8 +238,6 @@ const void BTreeIndex::insertEntry(const void *key, const RecordId rid)
  *  Remark: the searchPath does not contain the pageId of this current node.
  */
 const void BTreeIndex::insertLeafNode(const PageId pid, const void *key, const RecordId rid, std::vector<PageId> & searchPath){
-    //std::cout << "insert key value: "<< *((int *) key) << "\n";
-    //std::cout << "insert into leaf page: "<< pid << "\n";
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, pid, currPage);
     LeafNodeInt * currLeafPage = (LeafNodeInt*) currPage;
@@ -292,11 +269,8 @@ const void BTreeIndex::insertLeafNode(const PageId pid, const void *key, const R
         }
         currLeafPage -> keyArray[currLeafPage -> slotTaken - i] = *((int *) key);
         currLeafPage -> ridArray[currLeafPage -> slotTaken - i] = rid;
-        // update the amount of slots being taken up in the
-        // leaf index page
-        //std::cout << "successfully insert and current slot key array: "<<currLeafPage -> keyArray[currLeafPage -> slotTaken - i] << "\n";
+        // update the amount of slots being taken up in the leaf node
         currLeafPage -> slotTaken += 1;
-        //std::cout << "successfully insert and current slot taken: "<<currLeafPage -> slotTaken << "\n";
         // unpin this leaf index page
         this -> bufMgr -> unPinPage(this -> file, pid, true);
         return;
@@ -334,10 +308,17 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
     // by the sizes of leafOccupancy / 2 and leafOccupancy / 2 + 1
     bool newKeyInserted = false; // var to keep track whether the new
     // key has been inserted or not.
+    int threshold; // # of keys to split up the non-leaf node
+    if(this -> leafOccupancy % 2 == 0){
+        threshold = this -> leafOccupancy / 2;
+    }
+    else{
+        threshold = this -> leafOccupancy / 2 + 1;
+    }
     for(int i= 0; i < this -> leafOccupancy; ++i){
         if(currLeafPage -> keyArray[i] < *((int *)key)){
             // here we actually aussme that the leafOccupancy is an even number
-            if(newLeafPage -> slotTaken < this -> leafOccupancy / 2){
+            if(newLeafPage -> slotTaken <  threshold){
                 newLeafPage -> keyArray[i] = currLeafPage -> keyArray[i];
                 newLeafPage -> ridArray[i] = currLeafPage -> ridArray[i];
                 newLeafPage -> slotTaken += 1;
@@ -354,7 +335,7 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
                 // this is the first time we meet an exisitng key
                 // larger than the new key value.
                 // We should insert in the new key first.
-                if(newLeafPage -> slotTaken < this -> leafOccupancy / 2){
+                if(newLeafPage -> slotTaken <  threshold){
                     newLeafPage -> keyArray[i] = *((int*)key);
                     newLeafPage -> ridArray[i] = rid;
                     newLeafPage -> slotTaken += 1;
@@ -371,7 +352,7 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
             // this is the part under when the new key has been
             // inserted already
             // now, we have to re-position the original i-th slot of the current leaf node
-            if(newLeafPage -> slotTaken < this -> leafOccupancy / 2){
+            if(newLeafPage -> slotTaken <  threshold){
                 newLeafPage -> keyArray[i+1] = currLeafPage -> keyArray[i];
                 newLeafPage -> ridArray[i+1] = currLeafPage -> ridArray[i];
                 newLeafPage -> slotTaken += 1;
@@ -523,10 +504,17 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
     bool newKeyInserted = false; // var to keep track whether the new
     // key has been inserted or not.
     int pushup; // the key value needed to push up into the upper layer non-leaf node
+    int threshold; // # of keys to split up the non-leaf node
+    if(this -> nodeOccupancy % 2 == 0){
+        threshold = this -> nodeOccupancy / 2;
+    }
+    else{
+        threshold = this -> nodeOccupancy / 2 + 1;
+    }
     for(int i= 0; i < this -> nodeOccupancy; ++i){
         if( currNonLeafPage -> keyArray[i] < *((int *)key)){
             // here we actually aussme that the leafOccupancy is an even number
-            if(newNonLeafPage -> slotTaken < this -> nodeOccupancy / 2){
+            if(newNonLeafPage -> slotTaken < threshold){
                 newNonLeafPage -> keyArray[i] =  currNonLeafPage -> keyArray[i];
                 newNonLeafPage -> pageNoArray[i] =  currNonLeafPage -> pageNoArray[i];
                 newNonLeafPage -> slotTaken += 1;
@@ -539,7 +527,7 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
             // copy the element needed to push up in our current non-leaf page.
             // Therefore, we will not store it in the current non-leaf page.
             // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
-            else if(newNonLeafPage -> slotTaken == this -> nodeOccupancy / 2){
+            else if(newNonLeafPage -> slotTaken == threshold){
                 // push up this key to break up the new non-leaf Node and the current non-leaf node.
                 pushup =  currNonLeafPage -> keyArray[i];
                 // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
@@ -559,7 +547,7 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                 // this is the first time we meet an exisitng key
                 // larger than the new key value.
                 // We should insert in the new key first.
-                if(newNonLeafPage -> slotTaken < this -> nodeOccupancy / 2){
+                if(newNonLeafPage -> slotTaken < threshold){
                     newNonLeafPage -> keyArray[i] = *((int *)key);
                     // it is remarked the right pageId of this new key
                     // has not been changed and it should still be pointing to the slots that this new key used to belong to.
@@ -574,7 +562,7 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                 // copy the element needed to push up in our current non-leaf page.
                 // Therefore, we will not store it in the current non-leaf page.
                 // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
-                else if(newNonLeafPage -> slotTaken == this -> nodeOccupancy / 2){
+                else if(newNonLeafPage -> slotTaken == threshold){
                     // push up this key to break up the new non-leaf Node and the current non-leaf node.
                     pushup = *((int *)key);
                     // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
@@ -597,7 +585,7 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
             // this is the part under when the new key has been
             // inserted already
             // now, we have to re-position the original i-th slot of the current non-leaf node
-            if(newNonLeafPage -> slotTaken < this -> leafOccupancy / 2){
+            if(newNonLeafPage -> slotTaken < threshold){
                 newNonLeafPage -> keyArray[i+1] =  currNonLeafPage -> keyArray[i];
                 newNonLeafPage -> pageNoArray[i+1] =  currNonLeafPage -> pageNoArray[i];
                 newNonLeafPage -> slotTaken += 1;
@@ -610,7 +598,7 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
             // copy the element needed to push up in our current non-leaf page.
             // Therefore, we will not store it in the current non-leaf page.
             // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
-            else if(newNonLeafPage -> slotTaken == this -> nodeOccupancy / 2){
+            else if(newNonLeafPage -> slotTaken == threshold){
                 // push up this key to break up the new non-leaf Node and the current non-leaf node.
                 pushup =  currNonLeafPage -> keyArray[i];
                 // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
@@ -810,25 +798,16 @@ const void BTreeIndex::startScan(const void* lowValParm,
     }
     // this is the case where a valid key entry, which is greater than or equal to the lower bound of key, is found.
     // now we need to check whether this valid key entry has a valid record id and whether this valid key entry satisfies the condition under the upper bound of key.
-    //LeafNodeInt *node = (LeafNodeInt *)currentPageData;
-    /*
-    RecordId curRid = leafNode.ridArray[nextEntry];
+    
+    RecordId curRid = leafNode -> ridArray[nextEntry];
     if ((curRid.page_number == 0 && curRid.slot_number == 0) ||
-         node->keyArray[nextEntry] > highValInt ||
-        (node->keyArray[nextEntry] == highValInt && highOp == LT))
+         leafNode -> keyArray[nextEntry] > highValInt ||
+        (leafNode -> keyArray[nextEntry] == highValInt && highOp == LT))
         {
           // throw error if none satisfied page exist, and call endScan before throwing
           endScan();
           throw NoSuchKeyFoundException();
         }
-     */
-    if (leafNode -> keyArray[nextEntry] > highValInt ||
-    (leafNode -> keyArray[nextEntry] == highValInt && highOp == LT))
-    {
-      // throw error if none satisfied page exist, and call endScan before throwing
-      endScan();
-      throw NoSuchKeyFoundException();
-    }
 }
 
 // -----------------------------------------------------------------------------
@@ -989,7 +968,6 @@ const void BTreeIndex::endScan()
     }
     // unpin the current page
     try{
-        //std::cout << "unpin page num: " << this -> currentPageNum<< std::endl;
         this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
     }
     catch(PageNotPinnedException e){
