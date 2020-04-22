@@ -303,7 +303,7 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
     LeafNodeInt * newLeafPage = (LeafNodeInt*) newPage;
     // initialize the variable in this new leaf node
     newLeafPage -> slotTaken = 0;
-    newLeafPage -> rightSibPageNo = pid;
+    newLeafPage -> rightSibPageNo = currLeafPage -> rightSibPageNo;
     // we need to split this current leaf page up into two parts,
     // by the sizes of leafOccupancy / 2 and leafOccupancy / 2 + 1
     bool newKeyInserted = false; // var to keep track whether the new
@@ -315,10 +315,19 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
     else{
         threshold = this -> leafOccupancy / 2 + 1;
     }
+    for(int i = 0; i < this -> leafOccupancy; ++i){
+        if(currLeafPage -> keyArray[i] < *((int *)key)){
+            if(currLeafPage -> slotTaken > threshold){
+                // this is the case where
+                
+            }
+        }
+    }
+    /*
     for(int i= 0; i < this -> leafOccupancy; ++i){
         if(currLeafPage -> keyArray[i] < *((int *)key)){
             // here we actually aussme that the leafOccupancy is an even number
-            if(newLeafPage -> slotTaken <  threshold){
+            if(newLeafPage -> slotTaken <  threshold + 1){
                 newLeafPage -> keyArray[i] = currLeafPage -> keyArray[i];
                 newLeafPage -> ridArray[i] = currLeafPage -> ridArray[i];
                 newLeafPage -> slotTaken += 1;
@@ -364,8 +373,9 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
                 currLeafPage -> ridArray[i + 1 - newLeafPage -> slotTaken] =  currLeafPage -> ridArray[i];
             }
         }
-    }
-    int pushup = currLeafPage -> keyArray[0]; // the key value needed to push up into the upper layer non-leaf node
+    }*/
+    
+    int pushup = newLeafPage -> keyArray[0]; // the key value needed to push up into the upper layer non-leaf node
     this -> bufMgr -> unPinPage(this -> file, pid, true);
     this -> bufMgr -> unPinPage(this -> file, newPageId, true);
     // check whether this current page is actually a root
@@ -852,10 +862,13 @@ const void BTreeIndex::scanNext(RecordId& outRid)
     // Fetch the record id of the next index entry that matches the scan.
     LeafNodeInt * currPage = (LeafNodeInt *) (this -> currentPageData);
     // Return the next record from current page being scanned.
+    std::cout << "key value associate with the rid: " << currPage -> keyArray[this -> nextEntry] << std::endl;
+    std::cout << "entry value: " << this -> nextEntry << std::endl;
+    std::cout << "slot amount taken: " << currPage -> slotTaken << std::endl;
     outRid = currPage -> ridArray[this -> nextEntry];
     // move the scanner to the next satisfied record
     // check whether theer is more records in this current leaf node or not
-    if(this -> nextEntry < currPage  -> slotTaken){
+    if(this -> nextEntry < currPage  -> slotTaken - 1){
         // this is the case where theere are still other valid key and
         // rids in this current index page
         // check whether the next valid record in the current index
@@ -890,20 +903,26 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         }
     }
     else{
-        // this is the case of reaching the end of current index page:
-        // unpin this current page
-        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+         // this is the case of reaching the end of current index page:
         // prepare to move to scan the next leaf page:
         // case where there is no more next right sib page
         if(currPage  -> rightSibPageNo == Page::INVALID_NUMBER){
             // this case is where there is no more satisifed
             // entry existing. I.e. the scan is complete
+            std::cout << "stop at here! no more right sib!" << std::endl;
             this -> nextEntry = -2;
+            // this is the case of reaching the end of current index page:
+            // unpin this current page
+            this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
             return;
         }
         else{
             // move to the next index page
-            this -> currentPageNum = currPage -> rightSibPageNo;
+            PageId nextPage = currPage -> rightSibPageNo;
+            // unpin this current page
+            this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+            // update the var for the current scanned page to the next page
+            this -> currentPageNum = nextPage;
             this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
             // Note that we will not unpin this new scanned leaf index
             // page in this method. Because the user will call the
@@ -918,6 +937,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                 // this is the case where the first slot has not been
                 // taken yet. Then this leaf index page has not been
                 // taken with any records yet.
+                std::cout << "stop at here! no new records in the new page!" << std::endl;
                 this -> nextEntry = -2;
                 return;
             }
@@ -930,6 +950,9 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                     else{
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
+                        std::cout << "stop at here! no more valid new record! 1111" << std::endl;
+                        std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
+                        std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
                         this -> nextEntry = -2;
                     }
                     break;
@@ -940,6 +963,9 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                     else{
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
+                        std::cout << "stop at here! no more valid new record! 22222" << std::endl;
+                        std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
+                        std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
                         this -> nextEntry = -2;
                     }
                     break;
