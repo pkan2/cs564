@@ -11,6 +11,7 @@
 #include <string>
 #include "string.h"
 #include <sstream>
+#include <vector>
 
 #include "types.h"
 #include "page.h"
@@ -128,10 +129,6 @@ struct IndexMetaInfo{
    * Page number of root page of the B+ Tree inside the file index file.
    */
 	PageId rootPageNo;
-  /*
-   * Check if the root node is leaf node or not
-   * */
-  	bool isRootLeafPage;
 };
 
 /*
@@ -172,7 +169,8 @@ struct NonLeafNodeInt{
 */
 struct LeafNodeInt{
   /**
-   * Variable to keep track of amount of slots being taken up in the node
+   * Variable to keep track of amount of slots being taken up in the node.
+   * I.e. the number of valid keys in this leaf node.
   */
    int slotTaken;
   /**
@@ -308,8 +306,70 @@ class BTreeIndex {
    * High Operator. Can only be LT(<) or LTE(<=).
    */
 	Operator	highOp;
+    
+    /**
+     * Insert a new (key, rid) pair into a leaf node
+     * @param pid: the PageId of the potential leaf node to insert into
+     * @param key: a pointer to the value(integer we want to insert)
+     * @param rid: The corresponding record id of the tuple in the base relation
+     * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+     *  visited along our search path. The purpose of this vector is to benefit our insert later.
+     */
+    const void insertLeafNode(const PageId pid, const void *key, const RecordId rid, std::vector<PageId> & searchPath);
+    
+    /**
+     * Split up a leaf index page.
+     * @param pid: the page id of the current leaf node, which is needed to be splitted
+     * @param key: a pointer to the value of the key that we are looking for
+     * @param rid: The corresponding record id of the tuple in the base relation
+     * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+     *  visited along our search path. The purpose of this vector is to benefit our insert later.
+     */
+    const void splitLeafNode(PageId pid, const void *key,  const RecordId rid, std::vector<PageId> & searchPath);
+    
+    /**
+     * This function helps create a new non-leaf root, with inserting the pushup values into this root.
+     * @param key: the new key needed to insert in to this non-leaf root
+     * @param leftPageId: the pageId on the left side of this new key
+     * @param rightPageId: the pageId on the right side of this new key
+     * @param level: the level of this non-leaf root page
+     */
+    const void createAndInsertNewRoot(const void *key, const PageId leftPageId, const PageId rightPageId, int level);
+    
+    /**
+     * This function helps insert the pushup key from lower level into the upper level non-leaf node.
+     * @param pid: the PageId of this non-leaf node
+     * @param key: the new key or the pushup-ed key from lower level
+     * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+     * @param searchPath: the search path leading toward this current non-leaf node.
+     * Remark: the searchPath does not contain the pageId of this current node.
+     */
+    const void insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath);
+        
+    /**
+     * Split up a non-leaf index page.
+     * @param pid: the page id of the current non-leaf node, which is needed to be splitted
+     * @param key: the new key needed to be inserted
+     * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+     * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+     *  visited along our search path. The purpose of this vector is to benefit our insert later.
+     *  Remark: the searchPath does not contain the pageId of this current node.
+     */
+    const void splitNonLeafNode(PageId pid, const void *key,  const PageId leftPageId, std::vector<PageId> & searchPath);
+    
+    /**
+     *Recursively find the page potentially containing the target key, which is the page id of the first element larger than or equal to the lower bound given.
+     * @param key: a pointer to the value of the key that we are looking for
+     * @param pid: the variable to return with, which contains the PageId of the
+     * potentital target page.
+     * @param currentPageId: the pageId of the current page we are at
+     * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+     *  visited along our search path. The purpose of this vector is to benefit our insert later.
+     *  It is remarked that the last leaf page id is not in this searchPath.
+    */
+    const void searchLeafPageWithKey(const void *key, PageId & pid,  PageId currentPageId, std::vector<PageId> & searchPath);
 
-	
+
  public:
 
   /**
@@ -347,6 +407,8 @@ class BTreeIndex {
    * @param rid			Record ID of a record whose entry is getting inserted into the index.
 	**/
 	const void insertEntry(const void* key, const RecordId rid);
+    
+    
 
 
   /**
@@ -362,15 +424,10 @@ class BTreeIndex {
    * @param highOp	High operator (LT/LTE)
    * @throws  BadOpcodesException If lowOp and highOp do not contain one of their their expected values 
    * @throws  BadScanrangeException If lowVal > highval
-	 * @throws  NoSuchKeyFoundException If there is no key in the B+ tree that satisfies the scan criteria.
+   * @throws  NoSuchKeyFoundException If there is no key in the B+ tree that satisfies the scan criteria.
 	**/
 	const void startScan(const void* lowVal, const Operator lowOp, const void* highVal, const Operator highOp);
- 
-  /**
-   * Recursively find the page id of the first element larger than or equal to
-   * the lower bound given.
-   */
-  void startScanPageID();
+
 
   /**
 	 * Fetch the record id of the next index entry that matches the scan.

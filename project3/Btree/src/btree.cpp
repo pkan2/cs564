@@ -28,15 +28,15 @@ namespace badgerdb
 /**
  * Constructor
  *
- * The constructor first checks if the specified index ?le exists.
- * And index ?le name is constructed by concatenating the relational name with
+ * The constructor first checks if the specified index file exists.
+ * And index file name is constructed by concatenating the relational name with
  * the offset of the attribute over which the index is built.
  *
- * If the index ?le exists, the ?le is opened. 
- * Else, a new index ?le is created.
+ * If the index file exists, the file is opened.
+ * Else, a new index file is created.
  *
  * @param relationName The name of the relation on which to build the index. 
- * @param outIndexName The name of the index ?le
+ * @param outIndexName The name of the index file
  * @param bufMgrIn The instance of the global buffer manager.
  * @param attrByteOffset The byte offset of the attribute in the tuple on which to build the index.
  * @param attrType The data type of the attribute we are indexing.
@@ -78,6 +78,10 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
     this -> lowValString = "";
     this -> highValString = "";
     this -> scanExecuting = false;
+    // we define the initial value of nextEntry as -1, which is always
+    // an invalid value for index.
+    // also, we specify the case where nextEntry = -2, to present the
+    // case of scan complete.
     this -> nextEntry = -1;
     this -> currentPageNum = Page::INVALID_NUMBER;
     this -> currentPageData = NULL;
@@ -134,9 +138,16 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
     PageId rootPageId;
     Page * rootPage;
     this -> bufMgr -> allocPage(&file, rootPageId, rootPage);
+    // initialize value of the vars in the rootPage, which is firstly
+    // initialized as a leaf node.
+    ((LeafNodeInt *) rootPage) -> slotTaken = 0;
+    ((LeafNodeInt *) rootPage) -> rightSibPageNo = Page::INVALID_NUMBER;
     this -> bufMgr -> unPinPage(&file, rootPageId, true);
     metaInfo -> rootPageNo = rootPageId;
     this -> rootPageNum = rootPageId;
+    // the initial index page for root is actually a leaf node, since
+    // this is the only node as the start.
+    this -> rootIsLeaf = true;
     this -> bufMgr -> unPinPage(&file, metaPageId, true);
     // scan the relation and insert into the index file
     FileScan * fileScan = new FileScan(relationName, bufMgrIn);
@@ -160,6 +171,28 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
         //std::cout << "Read all records" << std::endl;
     }
     delete fileScan;
+
+    // code below is for debugging
+    /*
+     std::cout << "leafOccupancy: " << this -> leafOccupancy << "\n";
+    std::cout << "finish reading the input file\n";
+    Page * currRootPage;
+    this -> bufMgr -> readPage(this -> file, this -> rootPageNum, currRootPage);
+    if(this -> rootIsLeaf == false){
+        NonLeafNodeInt rootPageNode = *(( NonLeafNodeInt*) currRootPage);
+        std::cout << "root is not leaf\n";
+        std::cout << "root content taken: " << rootPageNode.slotTaken << "\n";
+        std::cout << "root content: " << rootPageNode.keyArray[1] << "\n";
+        this -> bufMgr -> unPinPage(this -> file, this -> rootPageNum,false);
+    }
+    else{
+        LeafNodeInt rootPageNode = *((LeafNodeInt*) currRootPage);
+        std::cout << "root is leaf\n";
+        std::cout << "root content taken: " << rootPageNode.slotTaken << "\n";
+        std::cout << "root content: " << rootPageNode.keyArray[0] << "\n";
+        this -> bufMgr -> unPinPage(this -> file, this -> rootPageNum,false);
+    }
+     */
 }
 
 
@@ -199,7 +232,474 @@ BTreeIndex::~BTreeIndex()
  **/
 const void BTreeIndex::insertEntry(const void *key, const RecordId rid) 
 {
+    /*
+  int midval;
+  PageId pid = insert(this-> rootPageNum, *(int *)key, rid, midval);
 
+  if (pid != 0)
+    indexMetaInfo.rootPageNo = splitRoot(midval, indexMetaInfo.rootPageNo, pid);
+     */
+    std::vector<PageId> searchPath;
+    if(this -> rootIsLeaf == true){
+        // this is the case when the root is a leaf index page already,
+        // then we can just try to insert into this root page first
+        this -> insertLeafNode(this -> rootPageNum, key, rid, searchPath);
+    }
+    else{
+        // this is the case when the root page is not a leaf.
+        // Then, we need to look for a potential leaf page to insert
+        // this target key value in.
+        PageId currPageId = Page::INVALID_NUMBER;
+        this -> searchLeafPageWithKey(key, currPageId, this -> rootPageNum, searchPath);
+        // insert the (key, rid) pair into this potential leaf node
+        this -> insertLeafNode(currPageId, key, rid, searchPath);
+    }
+}
+
+/**
+ * Insert a new (key, rid) pair into a leaf node
+ * @param pid: the PageId of the potential leaf node to insert into
+ * @param key: a pointer to the value(integer we want to insert)
+ * @param rid: The corresponding record id of the tuple in the base relation
+ * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+ *  visited along our search path. The purpose of this vector is to benefit our insert later.
+ *  Remark: the searchPath does not contain the pageId of this current node.
+ */
+const void BTreeIndex::insertLeafNode(const PageId pid, const void *key, const RecordId rid, std::vector<PageId> & searchPath){
+    Page * currPage;
+    this -> bufMgr -> readPage(this -> file, pid, currPage);
+    LeafNodeInt currLeafPage = *((LeafNodeInt*) currPage);
+    // check whether there is enough space to insert into this
+    // current leaf index page
+    if(currLeafPage.slotTaken < this -> leafOccupancy){
+        // the case where there is still available space in this current
+        // leaf index page
+        // we may need to reorder the current array unit storing in this
+        // leaf page, in order to make sure the keys in this leaf page
+        // is sorted.
+        int i;
+        for(i = 0; i < currLeafPage.slotTaken; ++i){
+            // shift all the slots with key value larger than this
+            // target key into the slots upper by 1.
+            if(currLeafPage.keyArray[currLeafPage.slotTaken - 1 - i] >  *((int *) key)){
+                currLeafPage.keyArray[currLeafPage.slotTaken - i] = currLeafPage.keyArray[currLeafPage.slotTaken - 1 - i];
+                currLeafPage.ridArray[currLeafPage.slotTaken - i] = currLeafPage.ridArray[currLeafPage.slotTaken - 1 - i];
+            }
+            // the only case in the else is where the key value in
+            // the slot "currLeafPage.slotTaken - 1 - i" is less than
+            // the key value of the target, since we assume that
+            // there is no duplication of key value.
+            // then we can store the new target pair into the slot
+            // "currleafPage.slotTaken - i"
+            else{
+                break;
+            }
+        }
+        currLeafPage.keyArray[currLeafPage.slotTaken - i] = *((int *) key);
+        currLeafPage.ridArray[currLeafPage.slotTaken - i] = rid;
+        // update the amount of slots being taken up in the
+        // leaf index page
+        currLeafPage.slotTaken += 1;
+        // unpin this leaf index page
+        this -> bufMgr -> unPinPage(this -> file, pid, true);
+        return;
+    }
+    else{
+        // this is the case where there is no more space to insert in
+        // a new (key, rid) pair in this current leaf page
+        // unpin the current leaf page pinned in this function
+        this -> bufMgr -> unPinPage(this -> file, pid, false);
+        // we need to split this leaf page up into two parts
+        this -> splitLeafNode(pid, key, rid, searchPath);
+    }
+}
+/**
+ * Split up a leaf index page.
+ * @param pid: the page id of the current leaf node, which is needed to be splitted
+ * @param key: a pointer to the value of the key that we are looking for
+ * @param rid: The corresponding record id of the tuple in the base relation
+ * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+ *  visited along our search path. The purpose of this vector is to benefit our insert later.
+ *  Remark: the searchPath does not contain the pageId of this current node.
+ */
+const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordId rid, std::vector<PageId> & searchPath){
+    Page * currPage;
+    this -> bufMgr -> readPage(this -> file, pid, currPage);
+    LeafNodeInt currLeafPage = *((LeafNodeInt*) currPage);
+    Page * newPage;
+    PageId newPageId;
+    this -> bufMgr -> allocPage(this -> file, newPageId, newPage);
+    LeafNodeInt newLeafPage = *((LeafNodeInt*) newPage);
+    // initialize the variable in this new leaf node
+    newLeafPage.slotTaken = 0;
+    newLeafPage.rightSibPageNo = pid;
+    // we need to split this current leaf page up into two parts,
+    // by the sizes of leafOccupancy / 2 and leafOccupancy / 2 + 1
+    bool newKeyInserted = false; // var to keep track whether the new
+    // key has been inserted or not.
+    for(int i= 0; i < this -> leafOccupancy; ++i){
+        if(currLeafPage.keyArray[i] < *((int *)key)){
+            // here we actually aussme that the leafOccupancy is an even number
+            if(newLeafPage.slotTaken < this -> leafOccupancy / 2){
+                newLeafPage.keyArray[i] = currLeafPage.keyArray[i];
+                newLeafPage.ridArray[i] = currLeafPage.ridArray[i];
+                newLeafPage.slotTaken += 1;
+                currLeafPage.slotTaken -= 1;
+            }
+            else{
+                // shift down the slots in this current leaf page
+                currLeafPage.keyArray[i - newLeafPage.slotTaken] =  currLeafPage.keyArray[i];
+                currLeafPage.ridArray[i - newLeafPage.slotTaken] =  currLeafPage.ridArray[i];
+            }
+        }
+        else{
+            if(newKeyInserted == false){
+                // this is the first time we meet an exisitng key
+                // larger than the new key value.
+                // We should insert in the new key first.
+                if(newLeafPage.slotTaken < this -> leafOccupancy / 2){
+                    newLeafPage.keyArray[i] = *((int*)key);
+                    newLeafPage.ridArray[i] = rid;
+                    newLeafPage.slotTaken += 1;
+                    newKeyInserted = true;
+                }
+                else{
+                    // shift down the slots in this current leaf page
+                    currLeafPage.keyArray[i - newLeafPage.slotTaken] =  *((int*)key);
+                    currLeafPage.ridArray[i - newLeafPage.slotTaken] =  rid;
+                    currLeafPage.slotTaken += 1;
+                    newKeyInserted = true;
+                }
+            }
+            // this is the part under when the new key has been
+            // inserted already
+            // now, we have to re-position the original i-th slot of the current leaf node
+            if(newLeafPage.slotTaken < this -> leafOccupancy / 2){
+                newLeafPage.keyArray[i+1] = currLeafPage.keyArray[i];
+                newLeafPage.ridArray[i+1] = currLeafPage.ridArray[i];
+                newLeafPage.slotTaken += 1;
+                currLeafPage.slotTaken -= 1;
+            }
+            else{
+                // shift down the slots in this current leaf page
+                currLeafPage.keyArray[i + 1 - newLeafPage.slotTaken] =  currLeafPage.keyArray[i];
+                currLeafPage.ridArray[i + 1 - newLeafPage.slotTaken] =  currLeafPage.ridArray[i];
+            }
+        }
+    }
+    int pushup = currLeafPage.keyArray[0]; // the key value needed to push up into the upper layer non-leaf node
+    this -> bufMgr -> unPinPage(this -> file, pid, true);
+    this -> bufMgr -> unPinPage(this -> file, newPageId, true);
+    // check whether this current page is actually a root
+    if(searchPath.size() == 0){
+        // case when this current page is a root. Then, we need to
+        // create a new non-leaf root.
+        this -> createAndInsertNewRoot(&pushup, newPageId, pid, 1);
+    }
+    else{
+        // case when this current page is not a root.
+        // get the upper level non-leaf parent node
+        PageId parentId = searchPath[searchPath.size() - 1];
+        // delete the parentId from the searchPath, to generate the search path for the parentId
+        searchPath.erase(searchPath.begin() + searchPath.size() - 1);
+        this -> insertNonLeafNode(parentId, &pushup, newPageId, searchPath);
+    }
+}
+
+/**
+ * This function helps create a new non-leaf root, with inserting the pushup values into this root.
+ * @param key: the new key needed to insert in to this non-leaf root
+ * @param leftPageId: the pageId on the left side of this new key
+ * @param rightPageId: the pageId on the right side of this new key
+ * @param level: the level of this non-leaf root page
+ */
+const void BTreeIndex::createAndInsertNewRoot(const void *key, const PageId leftPageId, const PageId rightPageId, int level){
+    PageId rootId;
+    Page * rootPage;
+    // allocate a page for the new non-leaf root
+    this -> bufMgr -> allocPage(this -> file, rootId, rootPage);
+    NonLeafNodeInt nonLeafRootPage = *((NonLeafNodeInt*) rootPage);
+    // initiate and update the var for this new non-leaf root
+    nonLeafRootPage.level = level;
+    nonLeafRootPage.keyArray[0]= *((int*) key);
+    nonLeafRootPage.pageNoArray[0] = leftPageId;
+    nonLeafRootPage.pageNoArray[1] = rightPageId;
+    nonLeafRootPage.slotTaken += 1;
+    this -> bufMgr -> unPinPage(this -> file, rootId, true);
+    // update the private var and the vars in the meta page
+    this -> rootIsLeaf = false;
+    this -> rootPageNum = rootId;
+    Page * metaPage;
+    this -> bufMgr -> readPage(this -> file, this -> headerPageNum, metaPage);
+    IndexMetaInfo metaInfo = *((IndexMetaInfo*) metaPage);
+    metaInfo.rootPageNo = rootId;
+    // unpin this meta page
+    this -> bufMgr -> unPinPage(this -> file, this -> headerPageNum, true);
+}
+
+/**
+ * This function helps insert the pushup key from lower level into the upper level non-leaf node.
+ * @param pid: the PageId of this non-leaf node
+ * @param key: the new key or the pushup-ed key from lower level
+ * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+ * @param searchPath: the search path leading toward this current non-leaf node.
+ * Remark: the searchPath does not contain the pageId of this current node.
+ */
+const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath){
+    Page * currPage;
+    this -> bufMgr -> readPage(this -> file, pid, currPage);
+    NonLeafNodeInt currNonLeafPage = *((NonLeafNodeInt*) currPage);
+    // check whether there is enough space to insert into this
+    // current non-leaf index page
+    if(currNonLeafPage.slotTaken < this -> nodeOccupancy){
+        // the case where there is still available space in this current
+        // non-leaf index page
+        // we may need to reorder the current array unit storing in this
+        // non-leaf page, in order to make sure the keys in this non-leaf page
+        // is sorted.
+        int i;
+        // One observation is that the newly inserted pageId corresponding to the page with keys smaller than this new key.
+        // Therefore, the newly inserted pageId will be on the left side of the new key value, which means this pageId will be at the same index in the pageNoArray as the index of the new key in the keyArray.
+        // shift the slot for the pageId corresponding to the greatest key upper by 1. We know that the newly inserted key will at most belong to the page pointed by the pageId corresponding to the greatest key.
+        // Thus, the newly inserted pageId will be on the left of this pageId corresponding to the greatest key for sure.
+        currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken + 1] = currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken];
+        for(i = 0; i < currNonLeafPage.slotTaken; ++i){
+            // shift all the slots with key value larger than this
+            // target key into the slots upper by 1.
+            if(currNonLeafPage.keyArray[currNonLeafPage.slotTaken - 1 - i] >  *((int *) key)){
+                currNonLeafPage.keyArray[currNonLeafPage.slotTaken - i] = currNonLeafPage.keyArray[currNonLeafPage.slotTaken - 1 - i];
+                currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken - i] = currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken - 1 - i];
+            }
+            // the only case in the else is where the key value in
+            // the slot "currLeafPage.slotTaken - 1 - i" is less than
+            // the key value of the target, since we assume that
+            // there is no duplication of key value.
+            // then we can store the new target pair (key, PageId) into the slot
+            // "currNonLeafPage.slotTaken - i"
+            else{
+                break;
+            }
+        }
+        currNonLeafPage.keyArray[currNonLeafPage.slotTaken - i] = *((int *) key);
+        currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken - i] = leftPageId;
+        // update the amount of slots being taken up in the
+        // leaf index page
+        currNonLeafPage.slotTaken += 1;
+        // unpin this non-leaf index page
+        this -> bufMgr -> unPinPage(this -> file, pid, true);
+        return;
+    }
+    else{
+        // this is the case where there is no more space to insert in
+        // a new (key, leftpageId) pair in this current non-leaf page
+        // unpin the current leaf page pinned in this function
+        this -> bufMgr -> unPinPage(this -> file, pid, false);
+        // we need to split this non-leaf page up into two parts
+        this -> splitNonLeafNode(pid, key, leftPageId, searchPath);
+    }
+}
+
+/**
+ * Split up a non-leaf index page.
+ * @param pid: the page id of the current non-leaf node, which is needed to be splitted
+ * @param key: the new key needed to be inserted
+ * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+ * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+ *  visited along our search path. The purpose of this vector is to benefit our insert later.
+ *  Remark: the searchPath does not contain the pageId of this current node.
+ */
+const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const PageId leftPageId, std::vector<PageId> & searchPath){
+    // most part of this function should be similar to the splitLeafNode function. However, in this splitNonLeaf case, we don't copy,i.e. keep, the pushup value any more.
+    // TODO.
+    Page * currPage;
+    this -> bufMgr -> readPage(this -> file, pid, currPage);
+    NonLeafNodeInt currNonLeafPage = *((NonLeafNodeInt*) currPage);
+    Page * newPage;
+    PageId newPageId;
+    this -> bufMgr -> allocPage(this -> file, newPageId, newPage);
+    NonLeafNodeInt newNonLeafPage = *((NonLeafNodeInt*) newPage);
+    // initialize the variable in this new leaf node
+    newNonLeafPage.slotTaken = 0;
+    newNonLeafPage.level = currNonLeafPage.level;
+    // we need to split this current non-leaf page up into two parts,
+    // by the sizes of nodeOccupancy / 2 and nodeOccupancy / 2 + 1
+    bool newKeyInserted = false; // var to keep track whether the new
+    // key has been inserted or not.
+    int pushup; // the key value needed to push up into the upper layer non-leaf node
+    for(int i= 0; i < this -> nodeOccupancy; ++i){
+        if(currNonLeafPage.keyArray[i] < *((int *)key)){
+            // here we actually aussme that the leafOccupancy is an even number
+            if(newNonLeafPage.slotTaken < this -> nodeOccupancy / 2){
+                newNonLeafPage.keyArray[i] = currNonLeafPage.keyArray[i];
+                newNonLeafPage.pageNoArray[i] = currNonLeafPage.pageNoArray[i];
+                newNonLeafPage.slotTaken += 1;
+                currNonLeafPage.slotTaken -= 1;
+            }
+            // this is the breaking up of the currNonLeafPage's keys,
+            // which is the first key left in the current non-leaf page,
+            // i.e. the first key that cannot be inserted in the new non-leaf node.
+            // However, in the non-leaf node pushup, we don't need to
+            // copy the element needed to push up in our current non-leaf page.
+            // Therefore, we will not store it in the current non-leaf page.
+            // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
+            else if(newNonLeafPage.slotTaken == this -> nodeOccupancy / 2){
+                // push up this key to break up the new non-leaf Node and the current non-leaf node.
+                pushup = currNonLeafPage.keyArray[i];
+                // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
+                // lose the pageId that this key is corresponding to.
+                // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
+                newNonLeafPage.pageNoArray[newNonLeafPage.slotTaken] = currNonLeafPage.pageNoArray[i];
+                currNonLeafPage.slotTaken -= 1;
+            }
+            else{
+                // shift down the rest slots in this current non-leaf page (there have newNonLeafPage.slotTaken + 1 slots being removed from this current non-leaf page in the front already.)
+                currNonLeafPage.keyArray[i - newNonLeafPage.slotTaken - 1] =  currNonLeafPage.keyArray[i];
+                currNonLeafPage.pageNoArray[i - newNonLeafPage.slotTaken - 1] =  currNonLeafPage.pageNoArray[i];
+            }
+        }
+        else{
+            if(newKeyInserted == false){
+                // this is the first time we meet an exisitng key
+                // larger than the new key value.
+                // We should insert in the new key first.
+                if(newNonLeafPage.slotTaken < this -> nodeOccupancy / 2){
+                    newNonLeafPage.keyArray[i] = *((int *)key);
+                    // it is remarked the right pageId of this new key
+                    // has not been changed and it should still be pointing to the slots that this new key used to belong to.
+                    newNonLeafPage.pageNoArray[i] = leftPageId;
+                    newNonLeafPage.slotTaken += 1;
+                    newKeyInserted = true;
+                }
+                // this is the breaking up of the currNonLeafPage's keys,
+                // which is the first key left in the current non-leaf page,
+                // i.e. the first key that cannot be inserted in the new non-leaf node.
+                // However, in the non-leaf node pushup, we don't need to
+                // copy the element needed to push up in our current non-leaf page.
+                // Therefore, we will not store it in the current non-leaf page.
+                // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
+                else if(newNonLeafPage.slotTaken == this -> nodeOccupancy / 2){
+                    // push up this key to break up the new non-leaf Node and the current non-leaf node.
+                    pushup = *((int *)key);
+                    // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
+                    // lose the pageId that this key is corresponding to.
+                    // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
+                newNonLeafPage.pageNoArray[newNonLeafPage.slotTaken] = leftPageId;
+                    newKeyInserted = true;
+                }
+                // this is the case where we have to insert this new key
+                // into the current non-leaf page
+                else{
+                    // shift down the slots in this current non-leaf page
+                    // in this case, there are newLeafPage.slotTaken + 1 amount of slots having been moved away from this current non-leaf page already.
+                    currNonLeafPage.keyArray[i - newNonLeafPage.slotTaken - 1] =  *((int*)key);
+                    currNonLeafPage.pageNoArray[i - newNonLeafPage.slotTaken - 1] =  leftPageId;
+                    currNonLeafPage.slotTaken += 1;
+                    newKeyInserted = true;
+                }
+            }
+            // this is the part under when the new key has been
+            // inserted already
+            // now, we have to re-position the original i-th slot of the current non-leaf node
+            if(newNonLeafPage.slotTaken < this -> leafOccupancy / 2){
+                newNonLeafPage.keyArray[i+1] = currNonLeafPage.keyArray[i];
+                newNonLeafPage.pageNoArray[i+1] = currNonLeafPage.pageNoArray[i];
+                newNonLeafPage.slotTaken += 1;
+                currNonLeafPage.slotTaken -= 1;
+            }
+            // this is the breaking up of the currNonLeafPage's keys,
+            // which is the first key left in the current non-leaf page,
+            // i.e. the first key that cannot be inserted in the new non-leaf node.
+            // However, in the non-leaf node pushup, we don't need to
+            // copy the element needed to push up in our current non-leaf page.
+            // Therefore, we will not store it in the current non-leaf page.
+            // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
+            else if(newNonLeafPage.slotTaken == this -> nodeOccupancy / 2){
+                // push up this key to break up the new non-leaf Node and the current non-leaf node.
+                pushup = currNonLeafPage.keyArray[i];
+                // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
+                // lose the pageId that this key is corresponding to.
+                // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
+                newNonLeafPage.pageNoArray[newNonLeafPage.slotTaken] = currNonLeafPage.pageNoArray[i];
+                currNonLeafPage.slotTaken -= 1;
+            }
+            else{
+                // shift down the slots in this current non-leaf page
+                // It is clear that there are exact newNonLeafPage.slotTaken amount of slots being removed
+                // away from this current non-leaf page.
+                currNonLeafPage.keyArray[i - newNonLeafPage.slotTaken] =  currNonLeafPage.keyArray[i];
+                currNonLeafPage.pageNoArray[i - newNonLeafPage.slotTaken] =  currNonLeafPage.pageNoArray[i];
+            }
+        }
+    }
+    // it is remarked that during the for loop, we are only
+    // shifting the pair of (leftPageId, key) around the current non-leaf node.
+    // However, the original pageId at the end of the current non-leaf node has not been checked yet.
+    // Now, we should move the original pageId at the end of the current non-leaf node, index at leafOccupancy, to the correct position,
+    // which should be the end of the updated pageNoArray of this current non-leaf node, at index currNonLeafPage.slotTaken.
+    currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken] = currNonLeafPage.pageNoArray[this -> leafOccupancy];
+    
+    this -> bufMgr -> unPinPage(this -> file, pid, true);
+    this -> bufMgr -> unPinPage(this -> file, newPageId, true);
+    
+    // check whether this current page is actually a root
+    if(searchPath.size() == 0){
+        // case when this current page is a root. Then, we need to
+        // create a new non-leaf root.
+        this -> createAndInsertNewRoot(&pushup, newPageId, pid, 0);
+        // since this is a non-leaf node, then the nodes above this one
+        // must be at level = 0 for sure.
+    }
+    else{
+        // case when this current page is not a root.
+        // get the upper level non-leaf parent node
+        PageId parentId = searchPath[searchPath.size() - 1];
+        // delete the parentId from the searchPath, to generate the search path for the parentId
+        searchPath.erase(searchPath.begin() + searchPath.size() - 1);
+        this -> insertNonLeafNode(parentId, &pushup, newPageId, searchPath);
+    }
+}
+
+/**
+ * Recursively find the page potentially containing the target key, which is the page id of the first element larger than or equal to the lower bound given.
+ * @param key: a pointer to the value of the key that we are looking for
+ * @param pid: the variable to return with, which contains the PageId of the
+ * potentital target page.
+ * @param currentPageId: the pageId of the current page we are at
+ * @param searchPath: a vector of PageId contains all the PageId of the pages we have
+ *  visited along our search path. The purpose of this vector is to benefit our insert later.
+ *  It is remarked that the last leaf page id is not in this searchPath.
+ */
+const void BTreeIndex::searchLeafPageWithKey(const void *key, PageId & pid, PageId currentPageId, std::vector<PageId> & searchPath){
+    Page * currPage;
+    this -> bufMgr -> readPage(this -> file, currentPageId, currPage);
+    NonLeafNodeInt currNode = *((NonLeafNodeInt *) currPage);
+    int targetIndex = 0;
+    int slotAvailable = currNode.slotTaken;
+    while(targetIndex < slotAvailable){
+                  if((lowOp == GT || lowOp == GTE) && *((int *) key) < currNode.keyArray[targetIndex]){
+                      break;
+                  }
+                  else{
+                      targetIndex++;
+                  }
+              }
+    PageId updateCurrPageNum = currNode.pageNoArray[targetIndex];
+    // check if the next lower level node is leaf node or not
+    if(currNode.level == 1){
+        this -> bufMgr -> unPinPage(this -> file, currentPageId, false);
+        // write this current page Id into the search path
+        searchPath.push_back(currentPageId);
+        // this is the case where the next level is leaf node
+        // we should just terminate the recurssion now
+        pid = updateCurrPageNum;
+    }
+    else{
+        // case where there is still non-leaf node in the next level
+        this -> bufMgr -> unPinPage(this -> file, currentPageId, false);
+        searchPath.push_back(currentPageId);
+        // we keep on doing the recursion
+        this -> searchLeafPageWithKey(key, pid, updateCurrPageNum, searchPath);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -233,6 +733,7 @@ const void BTreeIndex::startScan(const void* lowValParm,
     if(this -> scanExecuting == true){
         this -> endScan();
     }
+
     // Set up all the variables for scan.
     switch (this -> attributeType) {
         case INTEGER:
@@ -260,63 +761,79 @@ const void BTreeIndex::startScan(const void* lowValParm,
             }
             break;
     }
+    
     this -> scanExecuting = true;
     this -> lowOp = lowOpParm;
     this -> highOp = highOpParm;
-    // traverse from the root to find the first satisfied page ID
-    currentPageNum = indexMetaInfo.rootPageNo;
-    startScanPageID();
+    
+    PageId pid; // the page potentially containing the lowVal we want to find
+    std::vector<PageId> searchPath; // the vector containing the path along searching
+    
+    // traverse from the root to find the first satisfied page
+    // remember to unpin while traverse
+    //check if the root is actually a leaf node
+    if (this -> rootIsLeaf){
+        // if the root is already a leaf node, then it must be the only leaf node.
+        pid = this -> rootPageNum;
+    }
+    else{
+        this -> searchLeafPageWithKey(lowValParm, pid, this -> rootPageNum, searchPath);
+    }
+    
     // update the currentPageNum & currentPageData & nextEntry
-    currentPageNum = rootPageNum;
-    bufMgr->readPage(file, currentPageNum, currentPageData);
-    LeafNodeInt* leaf_node = (LeafNodeInt*) currentPageData;
-			for(int i =0; i < (*leaf_node).slotTaken; i++){
-				if(lowValInt >= (*leaf_node).keyArray[i]){
-					if(lowOp == GTE && lowValInt == (*leaf_node).keyArray[i]){
-						nextEntry = i;
-						break;
-					}
-					nextEntry = i;
-				}
-			}
-			bufMgr->unPinPage(file, currentPageNum, false);     
-    LeafNodeInt *node = (LeafNodeInt *)currentPageData;
-    RecordId curRid = node->ridArray[nextEntry];
+    this -> currentPageNum = pid;
+    this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
+    LeafNodeInt leafNode = *((LeafNodeInt*) currentPageData);
+    
+    this -> nextEntry = -1;
+    
+    // find the correct initial value for the nextEntry
+    for(int i = 0; i < leafNode.slotTaken; i++){
+        // based on the assumpetion that we will only consider the case
+        // of key as interger
+        if(lowValInt >= leafNode.keyArray[i]){
+            if(lowOp == GTE && lowValInt == leafNode.keyArray[i]){
+                nextEntry = i;
+                break;
+            }
+        }
+        else{
+            // this is the case where key value at slot i is strict greater than the required low value bound.
+            // we should stop the loop at the first such slot i happening.
+            nextEntry = i;
+            break;
+        }
+    }
+    // this is the case where there is no valid key entry to satisfy
+    // this required lower bound of key, in our potential containing leaf page.
+    if(this -> nextEntry == -1){
+        // throw error if none satisfied page exist, and call endScan before throwing
+        endScan();
+        throw NoSuchKeyFoundException();
+    }
+    // this is the case where a valid key entry, which is greater than or equal to the lower bound of key, is found.
+    // now we need to check whether this valid key entry has a valid record id and whether this valid key entry satisfies the condition under the upper bound of key.
+    //LeafNodeInt *node = (LeafNodeInt *)currentPageData;
+    /*
+    RecordId curRid = leafNode.ridArray[nextEntry];
     if ((curRid.page_number == 0 && curRid.slot_number == 0) ||
          node->keyArray[nextEntry] > highValInt ||
-        (node->keyArray[nextEntry] == highValInt && highOp == LT)) 
+        (node->keyArray[nextEntry] == highValInt && highOp == LT))
         {
           // throw error if none satisfied page exist, and call endScan before throwing
           endScan();
           throw NoSuchKeyFoundException();
-        }  
+        }
+     */
+    if (leafNode.keyArray[nextEntry] > highValInt ||
+    (leafNode.keyArray[nextEntry] == highValInt && highOp == LT))
+    {
+      // throw error if none satisfied page exist, and call endScan before throwing
+      endScan();
+      throw NoSuchKeyFoundException();
+    }
 }
 
-/**
- * This method called recursively to find the page id of the 
- * first pageNum larger than or equal to thelower bound given.
- */
-void BTreeIndex::startScanPageID() {
-  bufMgr->readPage(file, currentPageNum, currentPageData);
-  //to check if the page is Leaf
-  if ((*(IndexMetaInfo*)currentPageData).isRootLeafPage)  return;
-  NonLeafNodeInt *curnode = (NonLeafNodeInt *)currentPageData;
-  //unpin the nonLeaf page
-  bufMgr->unPinPage(file, currentPageNum, false); 
-  int targetIndex = 0;
-  int slotAvailable = (*curnode).soltTaken;
-  while(targetIndex < slotAvailable){
-				if((lowOp == GT || lowOp == GTE) && lowValInt < (*curnode).keyArray[targetIndex]){
-					break;
-				}
-				else{
-					targetIndex++;
-				}
-			}
-  currentPageNum = (*curnode).pageNoArray[targetIndex];
-  startScanPageID();
-} 
- 
 // -----------------------------------------------------------------------------
 // BTreeIndex::scanNext
 // -----------------------------------------------------------------------------
@@ -361,93 +878,98 @@ const void BTreeIndex::scanNext(RecordId& outRid)
     // Return the next record from current page being scanned.
     outRid = currPage.ridArray[this -> nextEntry];
     // move the scanner to the next satisfied record
-    // check whether current index page is reaching the end or not
-    if(this -> nextEntry < this -> leafOccupancy - 1){
-        // check whether there is more records in this leaf node:
-        // this is the case where the key value in the next slot is
-        // valid, then it means there is next valid record in the slot
-        if(currPage.keyArray[this -> nextEntry + 1] >= 0){
-            // check whether the next valid record in the current index
-            // page is still satisfied
+    // check whether theer is more records in this current leaf node or not
+    if(this -> nextEntry < currPage.slotTaken){
+        // this is the case where theere are still other valid key and
+        // rids in this current index page
+        // check whether the next valid record in the current index
+        // page is still satisfied
+        switch(this -> highOp){
+            case LT:
+                if(currPage.keyArray[this -> nextEntry + 1] < highValInt){
+                    this -> nextEntry += 1;
+                    return;
+                }
+                else{
+                    // this case is where there is no more satisifed
+                    // entry existing. I.e. the scan is complete
+                    this -> nextEntry = -2;
+                    return;
+                }
+                break;
+            case LTE:
+                if(currPage.keyArray[this -> nextEntry + 1] <= highValInt){
+                    this -> nextEntry += 1;
+                    return;
+                }
+                else{
+                    // this case is where there is no more satisifed
+                    // entry existing. I.e. the scan is complete
+                    this -> nextEntry = -2;
+                    return;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+    else{
+        // this is the case of reaching the end of current index page:
+        // unpin this current page
+        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+        // prepare to move to scan the next leaf page:
+        // case where there is no more next right sib page
+        if(currPage.rightSibPageNo == Page::INVALID_NUMBER){
+            // this case is where there is no more satisifed
+            // entry existing. I.e. the scan is complete
+            this -> nextEntry = -2;
+            return;
+        }
+        else{
+            // move to the next index page
+            this -> currentPageNum = currPage.rightSibPageNo;
+            this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
+            // Note that we will not unpin this new scanned leaf index
+            // page in this method. Because the user will call the
+            // endScan method, if the scan is complete. Therefore,
+            // we will leave for the endScan method to unpin this new
+            // scanned page.
+            currPage = *((LeafNodeInt *) this -> currentPageData);
+            // check whether the first slot in the new index page has
+            // valid record or not. I.e. check whether this first slot
+            // has been taken up or not
+            if(currPage.slotTaken == 0){
+                // this is the case where the first slot has not been
+                // taken yet. Then this leaf index page has not been
+                // taken with any records yet.
+                this -> nextEntry = -2;
+                return;
+            }
+            // check whether the first record in the new index page is still satisfied
             switch(this -> highOp){
                 case LT:
-                    if(currPage.keyArray[this -> nextEntry + 1] < highValInt){
-                        this -> nextEntry += 1;
+                    if(currPage.keyArray[0] < highValInt){
+                        this -> nextEntry = 0;
                     }
                     else{
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
                         this -> nextEntry = -2;
-                        return;
                     }
                     break;
                 case LTE:
-                    if(currPage.keyArray[this -> nextEntry + 1] <= highValInt){
-                        this -> nextEntry += 1;
+                    if(currPage.keyArray[0] <= highValInt){
+                        this -> nextEntry = 0;
                     }
                     else{
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
                         this -> nextEntry = -2;
-                        return;
                     }
                     break;
                 default:
                     break;
             }
-        }
-        // this is the case where the key value in the next slot is
-        // invalid, then it means there is no more valid records in this
-        // current index page. We should move on to the next index page
-    }
-    // this is the case of reaching the end of current index page for sure:
-    // unpin this current page
-    this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
-    // prepare to move to scan the next leaf page:
-    // case where there is no more next right sib page
-    if(currPage.rightSibPageNo == Page::INVALID_NUMBER){
-        // this case is where there is no more satisifed
-        // entry existing. I.e. the scan is complete
-        this -> nextEntry = -2;
-        return;
-    }
-    else{
-        // move to the next index page
-        this -> currentPageNum = currPage.rightSibPageNo;
-        this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
-        currPage = *((LeafNodeInt *) this -> currentPageData);
-        // check whether the first slot in the new index page has valid
-        // record or not
-        if(currPage.keyArray[0] < 0){
-            // this is the case where the key value is invalid.
-            // it means that there is no more valid record existing.
-            this -> nextEntry = -2;
-            return;
-        }
-        // check whether the first record in the new index page is still satisfied
-        switch(this -> highOp){
-            case LT:
-                if(currPage.keyArray[0] < highValInt){
-                    this -> nextEntry = 0;
-                }
-                else{
-                    // this case is where there is no more satisifed
-                    // entry existing. I.e. the scan is complete
-                    this -> nextEntry = -2;
-                }
-                break;
-            case LTE:
-                if(currPage.keyArray[0] <= highValInt){
-                    this -> nextEntry = 0;
-                }
-                else{
-                    // this case is where there is no more satisifed
-                    // entry existing. I.e. the scan is complete
-                    this -> nextEntry = -2;
-                }
-                break;
-            default:
-                break;
         }
     }
 }
