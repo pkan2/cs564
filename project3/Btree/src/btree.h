@@ -128,6 +128,10 @@ struct IndexMetaInfo{
    * Page number of root page of the B+ Tree inside the file index file.
    */
 	PageId rootPageNo;
+  /*
+   * Check if the root node is leaf node or not
+   * */
+  	bool isRootLeafPage;
 };
 
 /*
@@ -361,7 +365,12 @@ class BTreeIndex {
 	 * @throws  NoSuchKeyFoundException If there is no key in the B+ tree that satisfies the scan criteria.
 	**/
 	const void startScan(const void* lowVal, const Operator lowOp, const void* highVal, const Operator highOp);
-
+ 
+  /**
+   * Recursively find the page id of the first element larger than or equal to
+   * the lower bound given.
+   */
+  void startScanPageID();
 
   /**
 	 * Fetch the record id of the next index entry that matches the scan.

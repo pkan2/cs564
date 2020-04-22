@@ -199,11 +199,7 @@ BTreeIndex::~BTreeIndex()
  **/
 const void BTreeIndex::insertEntry(const void *key, const RecordId rid) 
 {
-  int midval;
-  PageId pid = insert(indexMetaInfo.rootPageNo, *(int *)key, rid, midval);
 
-  if (pid != 0)
-    indexMetaInfo.rootPageNo = splitRoot(midval, indexMetaInfo.rootPageNo, pid);
 }
 
 // -----------------------------------------------------------------------------
@@ -267,13 +263,60 @@ const void BTreeIndex::startScan(const void* lowValParm,
     this -> scanExecuting = true;
     this -> lowOp = lowOpParm;
     this -> highOp = highOpParm;
-    // traverse from the root to find the first satisfied page
-    // remember to unpin while traverse
+    // traverse from the root to find the first satisfied page ID
+    currentPageNum = indexMetaInfo.rootPageNo;
+    startScanPageID();
     // update the currentPageNum & currentPageData & nextEntry
-    // throw error if none satisfied page exist, and call endScan before throwing
-    // TODO
+    currentPageNum = rootPageNum;
+    bufMgr->readPage(file, currentPageNum, currentPageData);
+    LeafNodeInt* leaf_node = (LeafNodeInt*) currentPageData;
+			for(int i =0; i < (*leaf_node).slotTaken; i++){
+				if(lowValInt >= (*leaf_node).keyArray[i]){
+					if(lowOp == GTE && lowValInt == (*leaf_node).keyArray[i]){
+						nextEntry = i;
+						break;
+					}
+					nextEntry = i;
+				}
+			}
+			bufMgr->unPinPage(file, currentPageNum, false);     
+    LeafNodeInt *node = (LeafNodeInt *)currentPageData;
+    RecordId curRid = node->ridArray[nextEntry];
+    if ((curRid.page_number == 0 && curRid.slot_number == 0) ||
+         node->keyArray[nextEntry] > highValInt ||
+        (node->keyArray[nextEntry] == highValInt && highOp == LT)) 
+        {
+          // throw error if none satisfied page exist, and call endScan before throwing
+          endScan();
+          throw NoSuchKeyFoundException();
+        }  
 }
 
+/**
+ * This method called recursively to find the page id of the 
+ * first pageNum larger than or equal to thelower bound given.
+ */
+void BTreeIndex::startScanPageID() {
+  bufMgr->readPage(file, currentPageNum, currentPageData);
+  //to check if the page is Leaf
+  if ((*(IndexMetaInfo*)currentPageData).isRootLeafPage)  return;
+  NonLeafNodeInt *curnode = (NonLeafNodeInt *)currentPageData;
+  //unpin the nonLeaf page
+  bufMgr->unPinPage(file, currentPageNum, false); 
+  int targetIndex = 0;
+  int slotAvailable = (*curnode).soltTaken;
+  while(targetIndex < slotAvailable){
+				if((lowOp == GT || lowOp == GTE) && lowValInt < (*curnode).keyArray[targetIndex]){
+					break;
+				}
+				else{
+					targetIndex++;
+				}
+			}
+  currentPageNum = (*curnode).pageNoArray[targetIndex];
+  startScanPageID();
+} 
+ 
 // -----------------------------------------------------------------------------
 // BTreeIndex::scanNext
 // -----------------------------------------------------------------------------
