@@ -179,17 +179,17 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
     Page * currRootPage;
     this -> bufMgr -> readPage(this -> file, this -> rootPageNum, currRootPage);
     if(this -> rootIsLeaf == false){
-        NonLeafNodeInt rootPageNode = *(( NonLeafNodeInt*) currRootPage);
+        NonLeafNodeInt * rootPageNode = ( NonLeafNodeInt*) currRootPage;
         std::cout << "root is not leaf\n";
-        std::cout << "root content taken: " << rootPageNode.slotTaken << "\n";
-        std::cout << "root content: " << rootPageNode.keyArray[1] << "\n";
+        std::cout << "root content taken: " << rootPageNode -> slotTaken << "\n";
+        std::cout << "root content: " << rootPageNode -> keyArray[1] << "\n";
         this -> bufMgr -> unPinPage(this -> file, this -> rootPageNum,false);
     }
     else{
-        LeafNodeInt rootPageNode = *((LeafNodeInt*) currRootPage);
+        LeafNodeInt * rootPageNode = (LeafNodeInt*) currRootPage;
         std::cout << "root is leaf\n";
-        std::cout << "root content taken: " << rootPageNode.slotTaken << "\n";
-        std::cout << "root content: " << rootPageNode.keyArray[0] << "\n";
+        std::cout << "root content taken: " << rootPageNode -> slotTaken << "\n";
+        std::cout << "root content: " << rootPageNode- >keyArray[0] << "\n";
         this -> bufMgr -> unPinPage(this -> file, this -> rootPageNum,false);
     }
      */
@@ -232,13 +232,6 @@ BTreeIndex::~BTreeIndex()
  **/
 const void BTreeIndex::insertEntry(const void *key, const RecordId rid) 
 {
-    /*
-  int midval;
-  PageId pid = insert(this-> rootPageNum, *(int *)key, rid, midval);
-
-  if (pid != 0)
-    indexMetaInfo.rootPageNo = splitRoot(midval, indexMetaInfo.rootPageNo, pid);
-     */
     std::vector<PageId> searchPath;
     if(this -> rootIsLeaf == true){
         // this is the case when the root is a leaf index page already,
@@ -266,40 +259,44 @@ const void BTreeIndex::insertEntry(const void *key, const RecordId rid)
  *  Remark: the searchPath does not contain the pageId of this current node.
  */
 const void BTreeIndex::insertLeafNode(const PageId pid, const void *key, const RecordId rid, std::vector<PageId> & searchPath){
+    //std::cout << "insert key value: "<< *((int *) key) << "\n";
+    //std::cout << "insert into leaf page: "<< pid << "\n";
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, pid, currPage);
-    LeafNodeInt currLeafPage = *((LeafNodeInt*) currPage);
+    LeafNodeInt * currLeafPage = (LeafNodeInt*) currPage;
     // check whether there is enough space to insert into this
     // current leaf index page
-    if(currLeafPage.slotTaken < this -> leafOccupancy){
+    if(currLeafPage -> slotTaken < this -> leafOccupancy){
         // the case where there is still available space in this current
         // leaf index page
         // we may need to reorder the current array unit storing in this
         // leaf page, in order to make sure the keys in this leaf page
         // is sorted.
         int i;
-        for(i = 0; i < currLeafPage.slotTaken; ++i){
+        for(i = 0; i < currLeafPage -> slotTaken; ++i){
             // shift all the slots with key value larger than this
             // target key into the slots upper by 1.
-            if(currLeafPage.keyArray[currLeafPage.slotTaken - 1 - i] >  *((int *) key)){
-                currLeafPage.keyArray[currLeafPage.slotTaken - i] = currLeafPage.keyArray[currLeafPage.slotTaken - 1 - i];
-                currLeafPage.ridArray[currLeafPage.slotTaken - i] = currLeafPage.ridArray[currLeafPage.slotTaken - 1 - i];
+            if(currLeafPage -> keyArray[currLeafPage -> slotTaken - 1 - i] >  *((int *) key)){
+                currLeafPage -> keyArray[currLeafPage -> slotTaken - i] = currLeafPage -> keyArray[currLeafPage -> slotTaken - 1 - i];
+                currLeafPage -> ridArray[currLeafPage -> slotTaken - i] = currLeafPage -> ridArray[currLeafPage -> slotTaken - 1 - i];
             }
             // the only case in the else is where the key value in
-            // the slot "currLeafPage.slotTaken - 1 - i" is less than
+            // the slot "currLeafPage -> slotTaken - 1 - i" is less than
             // the key value of the target, since we assume that
             // there is no duplication of key value.
             // then we can store the new target pair into the slot
-            // "currleafPage.slotTaken - i"
+            // "currLeafPage -> slotTaken - i"
             else{
                 break;
             }
         }
-        currLeafPage.keyArray[currLeafPage.slotTaken - i] = *((int *) key);
-        currLeafPage.ridArray[currLeafPage.slotTaken - i] = rid;
+        currLeafPage -> keyArray[currLeafPage -> slotTaken - i] = *((int *) key);
+        currLeafPage -> ridArray[currLeafPage -> slotTaken - i] = rid;
         // update the amount of slots being taken up in the
         // leaf index page
-        currLeafPage.slotTaken += 1;
+        //std::cout << "successfully insert and current slot key array: "<<currLeafPage -> keyArray[currLeafPage -> slotTaken - i] << "\n";
+        currLeafPage -> slotTaken += 1;
+        //std::cout << "successfully insert and current slot taken: "<<currLeafPage -> slotTaken << "\n";
         // unpin this leaf index page
         this -> bufMgr -> unPinPage(this -> file, pid, true);
         return;
@@ -325,31 +322,31 @@ const void BTreeIndex::insertLeafNode(const PageId pid, const void *key, const R
 const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordId rid, std::vector<PageId> & searchPath){
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, pid, currPage);
-    LeafNodeInt currLeafPage = *((LeafNodeInt*) currPage);
+    LeafNodeInt * currLeafPage = (LeafNodeInt*) currPage;
     Page * newPage;
     PageId newPageId;
     this -> bufMgr -> allocPage(this -> file, newPageId, newPage);
-    LeafNodeInt newLeafPage = *((LeafNodeInt*) newPage);
+    LeafNodeInt * newLeafPage = (LeafNodeInt*) newPage;
     // initialize the variable in this new leaf node
-    newLeafPage.slotTaken = 0;
-    newLeafPage.rightSibPageNo = pid;
+    newLeafPage -> slotTaken = 0;
+    newLeafPage -> rightSibPageNo = pid;
     // we need to split this current leaf page up into two parts,
     // by the sizes of leafOccupancy / 2 and leafOccupancy / 2 + 1
     bool newKeyInserted = false; // var to keep track whether the new
     // key has been inserted or not.
     for(int i= 0; i < this -> leafOccupancy; ++i){
-        if(currLeafPage.keyArray[i] < *((int *)key)){
+        if(currLeafPage -> keyArray[i] < *((int *)key)){
             // here we actually aussme that the leafOccupancy is an even number
-            if(newLeafPage.slotTaken < this -> leafOccupancy / 2){
-                newLeafPage.keyArray[i] = currLeafPage.keyArray[i];
-                newLeafPage.ridArray[i] = currLeafPage.ridArray[i];
-                newLeafPage.slotTaken += 1;
-                currLeafPage.slotTaken -= 1;
+            if(newLeafPage -> slotTaken < this -> leafOccupancy / 2){
+                newLeafPage -> keyArray[i] = currLeafPage -> keyArray[i];
+                newLeafPage -> ridArray[i] = currLeafPage -> ridArray[i];
+                newLeafPage -> slotTaken += 1;
+                currLeafPage -> slotTaken -= 1;
             }
             else{
                 // shift down the slots in this current leaf page
-                currLeafPage.keyArray[i - newLeafPage.slotTaken] =  currLeafPage.keyArray[i];
-                currLeafPage.ridArray[i - newLeafPage.slotTaken] =  currLeafPage.ridArray[i];
+                currLeafPage -> keyArray[i - newLeafPage -> slotTaken] =  currLeafPage -> keyArray[i];
+                currLeafPage -> ridArray[i - newLeafPage -> slotTaken] =  currLeafPage -> ridArray[i];
             }
         }
         else{
@@ -357,37 +354,37 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
                 // this is the first time we meet an exisitng key
                 // larger than the new key value.
                 // We should insert in the new key first.
-                if(newLeafPage.slotTaken < this -> leafOccupancy / 2){
-                    newLeafPage.keyArray[i] = *((int*)key);
-                    newLeafPage.ridArray[i] = rid;
-                    newLeafPage.slotTaken += 1;
+                if(newLeafPage -> slotTaken < this -> leafOccupancy / 2){
+                    newLeafPage -> keyArray[i] = *((int*)key);
+                    newLeafPage -> ridArray[i] = rid;
+                    newLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
                 else{
                     // shift down the slots in this current leaf page
-                    currLeafPage.keyArray[i - newLeafPage.slotTaken] =  *((int*)key);
-                    currLeafPage.ridArray[i - newLeafPage.slotTaken] =  rid;
-                    currLeafPage.slotTaken += 1;
+                    currLeafPage -> keyArray[i - newLeafPage -> slotTaken] =  *((int*)key);
+                    currLeafPage -> ridArray[i - newLeafPage -> slotTaken] =  rid;
+                    currLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
             }
             // this is the part under when the new key has been
             // inserted already
             // now, we have to re-position the original i-th slot of the current leaf node
-            if(newLeafPage.slotTaken < this -> leafOccupancy / 2){
-                newLeafPage.keyArray[i+1] = currLeafPage.keyArray[i];
-                newLeafPage.ridArray[i+1] = currLeafPage.ridArray[i];
-                newLeafPage.slotTaken += 1;
-                currLeafPage.slotTaken -= 1;
+            if(newLeafPage -> slotTaken < this -> leafOccupancy / 2){
+                newLeafPage -> keyArray[i+1] = currLeafPage -> keyArray[i];
+                newLeafPage -> ridArray[i+1] = currLeafPage -> ridArray[i];
+                newLeafPage -> slotTaken += 1;
+                currLeafPage -> slotTaken -= 1;
             }
             else{
                 // shift down the slots in this current leaf page
-                currLeafPage.keyArray[i + 1 - newLeafPage.slotTaken] =  currLeafPage.keyArray[i];
-                currLeafPage.ridArray[i + 1 - newLeafPage.slotTaken] =  currLeafPage.ridArray[i];
+                currLeafPage -> keyArray[i + 1 - newLeafPage -> slotTaken] =  currLeafPage -> keyArray[i];
+                currLeafPage -> ridArray[i + 1 - newLeafPage -> slotTaken] =  currLeafPage -> ridArray[i];
             }
         }
     }
-    int pushup = currLeafPage.keyArray[0]; // the key value needed to push up into the upper layer non-leaf node
+    int pushup = currLeafPage -> keyArray[0]; // the key value needed to push up into the upper layer non-leaf node
     this -> bufMgr -> unPinPage(this -> file, pid, true);
     this -> bufMgr -> unPinPage(this -> file, newPageId, true);
     // check whether this current page is actually a root
@@ -418,21 +415,21 @@ const void BTreeIndex::createAndInsertNewRoot(const void *key, const PageId left
     Page * rootPage;
     // allocate a page for the new non-leaf root
     this -> bufMgr -> allocPage(this -> file, rootId, rootPage);
-    NonLeafNodeInt nonLeafRootPage = *((NonLeafNodeInt*) rootPage);
+    NonLeafNodeInt * nonLeafRootPage = (NonLeafNodeInt*) rootPage;
     // initiate and update the var for this new non-leaf root
-    nonLeafRootPage.level = level;
-    nonLeafRootPage.keyArray[0]= *((int*) key);
-    nonLeafRootPage.pageNoArray[0] = leftPageId;
-    nonLeafRootPage.pageNoArray[1] = rightPageId;
-    nonLeafRootPage.slotTaken += 1;
+    nonLeafRootPage -> level = level;
+    nonLeafRootPage -> keyArray[0]= *((int*) key);
+    nonLeafRootPage -> pageNoArray[0] = leftPageId;
+    nonLeafRootPage -> pageNoArray[1] = rightPageId;
+    nonLeafRootPage -> slotTaken += 1;
     this -> bufMgr -> unPinPage(this -> file, rootId, true);
     // update the private var and the vars in the meta page
     this -> rootIsLeaf = false;
     this -> rootPageNum = rootId;
     Page * metaPage;
     this -> bufMgr -> readPage(this -> file, this -> headerPageNum, metaPage);
-    IndexMetaInfo metaInfo = *((IndexMetaInfo*) metaPage);
-    metaInfo.rootPageNo = rootId;
+    IndexMetaInfo * metaInfo = (IndexMetaInfo*) metaPage;
+    metaInfo -> rootPageNo = rootId;
     // unpin this meta page
     this -> bufMgr -> unPinPage(this -> file, this -> headerPageNum, true);
 }
@@ -448,10 +445,10 @@ const void BTreeIndex::createAndInsertNewRoot(const void *key, const PageId left
 const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath){
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, pid, currPage);
-    NonLeafNodeInt currNonLeafPage = *((NonLeafNodeInt*) currPage);
+    NonLeafNodeInt * currNonLeafPage = (NonLeafNodeInt*) currPage;
     // check whether there is enough space to insert into this
     // current non-leaf index page
-    if(currNonLeafPage.slotTaken < this -> nodeOccupancy){
+    if(currNonLeafPage -> slotTaken < this -> nodeOccupancy){
         // the case where there is still available space in this current
         // non-leaf index page
         // we may need to reorder the current array unit storing in this
@@ -462,29 +459,29 @@ const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const Page
         // Therefore, the newly inserted pageId will be on the left side of the new key value, which means this pageId will be at the same index in the pageNoArray as the index of the new key in the keyArray.
         // shift the slot for the pageId corresponding to the greatest key upper by 1. We know that the newly inserted key will at most belong to the page pointed by the pageId corresponding to the greatest key.
         // Thus, the newly inserted pageId will be on the left of this pageId corresponding to the greatest key for sure.
-        currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken + 1] = currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken];
-        for(i = 0; i < currNonLeafPage.slotTaken; ++i){
+        currNonLeafPage -> pageNoArray[currNonLeafPage -> slotTaken + 1] =  currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken];
+        for(i = 0; i <  currNonLeafPage -> slotTaken; ++i){
             // shift all the slots with key value larger than this
             // target key into the slots upper by 1.
-            if(currNonLeafPage.keyArray[currNonLeafPage.slotTaken - 1 - i] >  *((int *) key)){
-                currNonLeafPage.keyArray[currNonLeafPage.slotTaken - i] = currNonLeafPage.keyArray[currNonLeafPage.slotTaken - 1 - i];
-                currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken - i] = currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken - 1 - i];
+            if( currNonLeafPage -> keyArray[ currNonLeafPage -> slotTaken - 1 - i] >  *((int *) key)){
+                 currNonLeafPage -> keyArray[ currNonLeafPage -> slotTaken - i] =  currNonLeafPage -> keyArray[ currNonLeafPage -> slotTaken - 1 - i];
+                 currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - i] =  currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - 1 - i];
             }
             // the only case in the else is where the key value in
-            // the slot "currLeafPage.slotTaken - 1 - i" is less than
+            // the slot "currLeafPage -> slotTaken - 1 - i" is less than
             // the key value of the target, since we assume that
             // there is no duplication of key value.
             // then we can store the new target pair (key, PageId) into the slot
-            // "currNonLeafPage.slotTaken - i"
+            // " currNonLeafPage -> slotTaken - i"
             else{
                 break;
             }
         }
-        currNonLeafPage.keyArray[currNonLeafPage.slotTaken - i] = *((int *) key);
-        currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken - i] = leftPageId;
+         currNonLeafPage -> keyArray[ currNonLeafPage -> slotTaken - i] = *((int *) key);
+         currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - i] = leftPageId;
         // update the amount of slots being taken up in the
         // leaf index page
-        currNonLeafPage.slotTaken += 1;
+         currNonLeafPage -> slotTaken += 1;
         // unpin this non-leaf index page
         this -> bufMgr -> unPinPage(this -> file, pid, true);
         return;
@@ -513,27 +510,27 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
     // TODO.
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, pid, currPage);
-    NonLeafNodeInt currNonLeafPage = *((NonLeafNodeInt*) currPage);
+    NonLeafNodeInt * currNonLeafPage = (NonLeafNodeInt*) currPage;
     Page * newPage;
     PageId newPageId;
     this -> bufMgr -> allocPage(this -> file, newPageId, newPage);
-    NonLeafNodeInt newNonLeafPage = *((NonLeafNodeInt*) newPage);
+    NonLeafNodeInt * newNonLeafPage = (NonLeafNodeInt*) newPage;
     // initialize the variable in this new leaf node
-    newNonLeafPage.slotTaken = 0;
-    newNonLeafPage.level = currNonLeafPage.level;
+    newNonLeafPage -> slotTaken = 0;
+    newNonLeafPage -> level = currNonLeafPage -> level;
     // we need to split this current non-leaf page up into two parts,
     // by the sizes of nodeOccupancy / 2 and nodeOccupancy / 2 + 1
     bool newKeyInserted = false; // var to keep track whether the new
     // key has been inserted or not.
     int pushup; // the key value needed to push up into the upper layer non-leaf node
     for(int i= 0; i < this -> nodeOccupancy; ++i){
-        if(currNonLeafPage.keyArray[i] < *((int *)key)){
+        if( currNonLeafPage -> keyArray[i] < *((int *)key)){
             // here we actually aussme that the leafOccupancy is an even number
-            if(newNonLeafPage.slotTaken < this -> nodeOccupancy / 2){
-                newNonLeafPage.keyArray[i] = currNonLeafPage.keyArray[i];
-                newNonLeafPage.pageNoArray[i] = currNonLeafPage.pageNoArray[i];
-                newNonLeafPage.slotTaken += 1;
-                currNonLeafPage.slotTaken -= 1;
+            if(newNonLeafPage -> slotTaken < this -> nodeOccupancy / 2){
+                newNonLeafPage -> keyArray[i] =  currNonLeafPage -> keyArray[i];
+                newNonLeafPage -> pageNoArray[i] =  currNonLeafPage -> pageNoArray[i];
+                newNonLeafPage -> slotTaken += 1;
+                 currNonLeafPage -> slotTaken -= 1;
             }
             // this is the breaking up of the currNonLeafPage's keys,
             // which is the first key left in the current non-leaf page,
@@ -542,19 +539,19 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
             // copy the element needed to push up in our current non-leaf page.
             // Therefore, we will not store it in the current non-leaf page.
             // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
-            else if(newNonLeafPage.slotTaken == this -> nodeOccupancy / 2){
+            else if(newNonLeafPage -> slotTaken == this -> nodeOccupancy / 2){
                 // push up this key to break up the new non-leaf Node and the current non-leaf node.
-                pushup = currNonLeafPage.keyArray[i];
+                pushup =  currNonLeafPage -> keyArray[i];
                 // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
                 // lose the pageId that this key is corresponding to.
                 // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
-                newNonLeafPage.pageNoArray[newNonLeafPage.slotTaken] = currNonLeafPage.pageNoArray[i];
-                currNonLeafPage.slotTaken -= 1;
+                newNonLeafPage -> pageNoArray[newNonLeafPage -> slotTaken] =  currNonLeafPage -> pageNoArray[i];
+                 currNonLeafPage -> slotTaken -= 1;
             }
             else{
-                // shift down the rest slots in this current non-leaf page (there have newNonLeafPage.slotTaken + 1 slots being removed from this current non-leaf page in the front already.)
-                currNonLeafPage.keyArray[i - newNonLeafPage.slotTaken - 1] =  currNonLeafPage.keyArray[i];
-                currNonLeafPage.pageNoArray[i - newNonLeafPage.slotTaken - 1] =  currNonLeafPage.pageNoArray[i];
+                // shift down the rest slots in this current non-leaf page (there have newNonLeafPage -> slotTaken + 1 slots being removed from this current non-leaf page in the front already.)
+                 currNonLeafPage -> keyArray[i - newNonLeafPage -> slotTaken - 1] =   currNonLeafPage -> keyArray[i];
+                 currNonLeafPage -> pageNoArray[i - newNonLeafPage -> slotTaken - 1] =   currNonLeafPage -> pageNoArray[i];
             }
         }
         else{
@@ -562,12 +559,12 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                 // this is the first time we meet an exisitng key
                 // larger than the new key value.
                 // We should insert in the new key first.
-                if(newNonLeafPage.slotTaken < this -> nodeOccupancy / 2){
-                    newNonLeafPage.keyArray[i] = *((int *)key);
+                if(newNonLeafPage -> slotTaken < this -> nodeOccupancy / 2){
+                    newNonLeafPage -> keyArray[i] = *((int *)key);
                     // it is remarked the right pageId of this new key
                     // has not been changed and it should still be pointing to the slots that this new key used to belong to.
-                    newNonLeafPage.pageNoArray[i] = leftPageId;
-                    newNonLeafPage.slotTaken += 1;
+                    newNonLeafPage -> pageNoArray[i] = leftPageId;
+                    newNonLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
                 // this is the breaking up of the currNonLeafPage's keys,
@@ -577,34 +574,34 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                 // copy the element needed to push up in our current non-leaf page.
                 // Therefore, we will not store it in the current non-leaf page.
                 // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
-                else if(newNonLeafPage.slotTaken == this -> nodeOccupancy / 2){
+                else if(newNonLeafPage -> slotTaken == this -> nodeOccupancy / 2){
                     // push up this key to break up the new non-leaf Node and the current non-leaf node.
                     pushup = *((int *)key);
                     // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
                     // lose the pageId that this key is corresponding to.
                     // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
-                newNonLeafPage.pageNoArray[newNonLeafPage.slotTaken] = leftPageId;
+                newNonLeafPage -> pageNoArray[newNonLeafPage -> slotTaken] = leftPageId;
                     newKeyInserted = true;
                 }
                 // this is the case where we have to insert this new key
                 // into the current non-leaf page
                 else{
                     // shift down the slots in this current non-leaf page
-                    // in this case, there are newLeafPage.slotTaken + 1 amount of slots having been moved away from this current non-leaf page already.
-                    currNonLeafPage.keyArray[i - newNonLeafPage.slotTaken - 1] =  *((int*)key);
-                    currNonLeafPage.pageNoArray[i - newNonLeafPage.slotTaken - 1] =  leftPageId;
-                    currNonLeafPage.slotTaken += 1;
+                    // in this case, there are  currNonLeafPage -> slotTaken + 1 amount of slots having been moved away from this current non-leaf page already.
+                     currNonLeafPage -> keyArray[i - newNonLeafPage -> slotTaken - 1] =  *((int*)key);
+                     currNonLeafPage -> pageNoArray[i - newNonLeafPage -> slotTaken - 1] =  leftPageId;
+                     currNonLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
             }
             // this is the part under when the new key has been
             // inserted already
             // now, we have to re-position the original i-th slot of the current non-leaf node
-            if(newNonLeafPage.slotTaken < this -> leafOccupancy / 2){
-                newNonLeafPage.keyArray[i+1] = currNonLeafPage.keyArray[i];
-                newNonLeafPage.pageNoArray[i+1] = currNonLeafPage.pageNoArray[i];
-                newNonLeafPage.slotTaken += 1;
-                currNonLeafPage.slotTaken -= 1;
+            if(newNonLeafPage -> slotTaken < this -> leafOccupancy / 2){
+                newNonLeafPage -> keyArray[i+1] =  currNonLeafPage -> keyArray[i];
+                newNonLeafPage -> pageNoArray[i+1] =  currNonLeafPage -> pageNoArray[i];
+                newNonLeafPage -> slotTaken += 1;
+                 currNonLeafPage -> slotTaken -= 1;
             }
             // this is the breaking up of the currNonLeafPage's keys,
             // which is the first key left in the current non-leaf page,
@@ -613,21 +610,21 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
             // copy the element needed to push up in our current non-leaf page.
             // Therefore, we will not store it in the current non-leaf page.
             // Instead, we will directly push up and insert this key into the upper level parent non-leaf page.
-            else if(newNonLeafPage.slotTaken == this -> nodeOccupancy / 2){
+            else if(newNonLeafPage -> slotTaken == this -> nodeOccupancy / 2){
                 // push up this key to break up the new non-leaf Node and the current non-leaf node.
-                pushup = currNonLeafPage.keyArray[i];
+                pushup =  currNonLeafPage -> keyArray[i];
                 // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
                 // lose the pageId that this key is corresponding to.
                 // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
-                newNonLeafPage.pageNoArray[newNonLeafPage.slotTaken] = currNonLeafPage.pageNoArray[i];
-                currNonLeafPage.slotTaken -= 1;
+                newNonLeafPage -> pageNoArray[newNonLeafPage -> slotTaken] =  currNonLeafPage -> pageNoArray[i];
+                 currNonLeafPage -> slotTaken -= 1;
             }
             else{
                 // shift down the slots in this current non-leaf page
-                // It is clear that there are exact newNonLeafPage.slotTaken amount of slots being removed
+                // It is clear that there are exact newNonLeafPage -> slotTaken amount of slots being removed
                 // away from this current non-leaf page.
-                currNonLeafPage.keyArray[i - newNonLeafPage.slotTaken] =  currNonLeafPage.keyArray[i];
-                currNonLeafPage.pageNoArray[i - newNonLeafPage.slotTaken] =  currNonLeafPage.pageNoArray[i];
+                 currNonLeafPage -> keyArray[i - newNonLeafPage -> slotTaken] =   currNonLeafPage -> keyArray[i];
+                 currNonLeafPage -> pageNoArray[i - newNonLeafPage -> slotTaken] =   currNonLeafPage -> pageNoArray[i];
             }
         }
     }
@@ -635,8 +632,8 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
     // shifting the pair of (leftPageId, key) around the current non-leaf node.
     // However, the original pageId at the end of the current non-leaf node has not been checked yet.
     // Now, we should move the original pageId at the end of the current non-leaf node, index at leafOccupancy, to the correct position,
-    // which should be the end of the updated pageNoArray of this current non-leaf node, at index currNonLeafPage.slotTaken.
-    currNonLeafPage.pageNoArray[currNonLeafPage.slotTaken] = currNonLeafPage.pageNoArray[this -> leafOccupancy];
+    // which should be the end of the updated pageNoArray of this current non-leaf node, at index  currNonLeafPage -> slotTaken.
+     currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken] =  currNonLeafPage -> pageNoArray[this -> leafOccupancy];
     
     this -> bufMgr -> unPinPage(this -> file, pid, true);
     this -> bufMgr -> unPinPage(this -> file, newPageId, true);
@@ -672,20 +669,20 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
 const void BTreeIndex::searchLeafPageWithKey(const void *key, PageId & pid, PageId currentPageId, std::vector<PageId> & searchPath){
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, currentPageId, currPage);
-    NonLeafNodeInt currNode = *((NonLeafNodeInt *) currPage);
+    NonLeafNodeInt * currNode = (NonLeafNodeInt *) currPage;
     int targetIndex = 0;
-    int slotAvailable = currNode.slotTaken;
+    int slotAvailable = currNode -> slotTaken;
     while(targetIndex < slotAvailable){
-                  if((lowOp == GT || lowOp == GTE) && *((int *) key) < currNode.keyArray[targetIndex]){
+                  if((lowOp == GT || lowOp == GTE) && *((int *) key) < currNode -> keyArray[targetIndex]){
                       break;
                   }
                   else{
                       targetIndex++;
                   }
               }
-    PageId updateCurrPageNum = currNode.pageNoArray[targetIndex];
+    PageId updateCurrPageNum = currNode -> pageNoArray[targetIndex];
     // check if the next lower level node is leaf node or not
-    if(currNode.level == 1){
+    if(currNode -> level == 1){
         this -> bufMgr -> unPinPage(this -> file, currentPageId, false);
         // write this current page Id into the search path
         searchPath.push_back(currentPageId);
@@ -783,16 +780,16 @@ const void BTreeIndex::startScan(const void* lowValParm,
     // update the currentPageNum & currentPageData & nextEntry
     this -> currentPageNum = pid;
     this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
-    LeafNodeInt leafNode = *((LeafNodeInt*) currentPageData);
+    LeafNodeInt * leafNode = (LeafNodeInt*) currentPageData;
     
     this -> nextEntry = -1;
     
     // find the correct initial value for the nextEntry
-    for(int i = 0; i < leafNode.slotTaken; i++){
+    for(int i = 0; i < leafNode -> slotTaken; i++){
         // based on the assumpetion that we will only consider the case
         // of key as interger
-        if(lowValInt >= leafNode.keyArray[i]){
-            if(lowOp == GTE && lowValInt == leafNode.keyArray[i]){
+        if(lowValInt >= leafNode -> keyArray[i]){
+            if(lowOp == GTE && lowValInt == leafNode -> keyArray[i]){
                 nextEntry = i;
                 break;
             }
@@ -825,8 +822,8 @@ const void BTreeIndex::startScan(const void* lowValParm,
           throw NoSuchKeyFoundException();
         }
      */
-    if (leafNode.keyArray[nextEntry] > highValInt ||
-    (leafNode.keyArray[nextEntry] == highValInt && highOp == LT))
+    if (leafNode -> keyArray[nextEntry] > highValInt ||
+    (leafNode -> keyArray[nextEntry] == highValInt && highOp == LT))
     {
       // throw error if none satisfied page exist, and call endScan before throwing
       endScan();
@@ -874,19 +871,19 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         throw IndexScanCompletedException();
     }
     // Fetch the record id of the next index entry that matches the scan.
-    LeafNodeInt currPage = *((LeafNodeInt *) this -> currentPageData);
+    LeafNodeInt * currPage = (LeafNodeInt *) (this -> currentPageData);
     // Return the next record from current page being scanned.
-    outRid = currPage.ridArray[this -> nextEntry];
+    outRid = currPage -> ridArray[this -> nextEntry];
     // move the scanner to the next satisfied record
     // check whether theer is more records in this current leaf node or not
-    if(this -> nextEntry < currPage.slotTaken){
+    if(this -> nextEntry < currPage  -> slotTaken){
         // this is the case where theere are still other valid key and
         // rids in this current index page
         // check whether the next valid record in the current index
         // page is still satisfied
         switch(this -> highOp){
             case LT:
-                if(currPage.keyArray[this -> nextEntry + 1] < highValInt){
+                if(currPage  -> keyArray[this -> nextEntry + 1] < highValInt){
                     this -> nextEntry += 1;
                     return;
                 }
@@ -898,7 +895,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                 }
                 break;
             case LTE:
-                if(currPage.keyArray[this -> nextEntry + 1] <= highValInt){
+                if(currPage  -> keyArray[this -> nextEntry + 1] <= highValInt){
                     this -> nextEntry += 1;
                     return;
                 }
@@ -919,7 +916,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
         // prepare to move to scan the next leaf page:
         // case where there is no more next right sib page
-        if(currPage.rightSibPageNo == Page::INVALID_NUMBER){
+        if(currPage  -> rightSibPageNo == Page::INVALID_NUMBER){
             // this case is where there is no more satisifed
             // entry existing. I.e. the scan is complete
             this -> nextEntry = -2;
@@ -927,18 +924,18 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         }
         else{
             // move to the next index page
-            this -> currentPageNum = currPage.rightSibPageNo;
+            this -> currentPageNum = currPage -> rightSibPageNo;
             this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
             // Note that we will not unpin this new scanned leaf index
             // page in this method. Because the user will call the
             // endScan method, if the scan is complete. Therefore,
             // we will leave for the endScan method to unpin this new
             // scanned page.
-            currPage = *((LeafNodeInt *) this -> currentPageData);
+            currPage = (LeafNodeInt *) this -> currentPageData;
             // check whether the first slot in the new index page has
             // valid record or not. I.e. check whether this first slot
             // has been taken up or not
-            if(currPage.slotTaken == 0){
+            if(currPage -> slotTaken == 0){
                 // this is the case where the first slot has not been
                 // taken yet. Then this leaf index page has not been
                 // taken with any records yet.
@@ -948,7 +945,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
             // check whether the first record in the new index page is still satisfied
             switch(this -> highOp){
                 case LT:
-                    if(currPage.keyArray[0] < highValInt){
+                    if(currPage -> keyArray[0] < highValInt){
                         this -> nextEntry = 0;
                     }
                     else{
@@ -958,7 +955,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                     }
                     break;
                 case LTE:
-                    if(currPage.keyArray[0] <= highValInt){
+                    if(currPage -> keyArray[0] <= highValInt){
                         this -> nextEntry = 0;
                     }
                     else{
@@ -992,6 +989,7 @@ const void BTreeIndex::endScan()
     }
     // unpin the current page
     try{
+        //std::cout << "unpin page num: " << this -> currentPageNum<< std::endl;
         this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
     }
     catch(PageNotPinnedException e){
