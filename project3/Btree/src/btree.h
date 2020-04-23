@@ -341,21 +341,25 @@ class BTreeIndex {
      * @param pid: the PageId of this non-leaf node
      * @param key: the new key or the pushup-ed key from lower level
      * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+     * Remark: if this key is actually inserted from a lower leaf page, then the newly created pageId is actually for the right pageId.
      * @param searchPath: the search path leading toward this current non-leaf node.
      * Remark: the searchPath does not contain the pageId of this current node.
+     * @param: fromLeaf: is the bool var, true means inserting up from a leaf node. false means from a nonleaf node.
      */
-    const void insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath);
+    const void insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath, bool fromLeaf);
         
     /**
      * Split up a non-leaf index page.
      * @param pid: the page id of the current non-leaf node, which is needed to be splitted
      * @param key: the new key needed to be inserted
      * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+     * Remark: if this key is actually inserted from a lower leaf page, then the newly created pageId is actually for the right pageId.
      * @param searchPath: a vector of PageId contains all the PageId of the pages we have
      *  visited along our search path. The purpose of this vector is to benefit our insert later.
      *  Remark: the searchPath does not contain the pageId of this current node.
+     *   @param: fromLeaf: is the bool var, true means inserting up from a leaf node. false means from a nonleaf node.
      */
-    const void splitNonLeafNode(PageId pid, const void *key,  const PageId leftPageId, std::vector<PageId> & searchPath);
+    const void splitNonLeafNode(PageId pid, const void *key,  const PageId leftPageId, std::vector<PageId> & searchPath, bool fromLeaf);
     
     /**
      *Recursively find the page potentially containing the target key, which is the page id of the first element larger than or equal to the lower bound given.

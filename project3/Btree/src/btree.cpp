@@ -382,7 +382,7 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
     if(searchPath.size() == 0){
         // case when this current page is a root. Then, we need to
         // create a new non-leaf root.
-        this -> createAndInsertNewRoot(&pushup, newPageId, pid, 1);
+        this -> createAndInsertNewRoot(&pushup, pid, newPageId, 1);
     }
     else{
         // case when this current page is not a root.
@@ -390,7 +390,7 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
         PageId parentId = searchPath[searchPath.size() - 1];
         // delete the parentId from the searchPath, to generate the search path for the parentId
         searchPath.erase(searchPath.begin() + searchPath.size() - 1);
-        this -> insertNonLeafNode(parentId, &pushup, newPageId, searchPath);
+        this -> insertNonLeafNode(parentId, &pushup, newPageId, searchPath, true);
     }
 }
 
@@ -429,11 +429,14 @@ const void BTreeIndex::createAndInsertNewRoot(const void *key, const PageId left
  * This function helps insert the pushup key from lower level into the upper level non-leaf node.
  * @param pid: the PageId of this non-leaf node
  * @param key: the new key or the pushup-ed key from lower level
- * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+ * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key.
+ * Remark: if this key is actually inserted from a lower leaf page, then the newly created pageId is actually for the right pageId.
  * @param searchPath: the search path leading toward this current non-leaf node.
  * Remark: the searchPath does not contain the pageId of this current node.
+ * @param: fromLeaf: is the bool var, true means inserting up from a leaf node. false means from a
+ * nonleaf node.
  */
-const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath){
+const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const PageId leftPageId, std::vector<PageId> searchPath, bool fromLeaf){
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, pid, currPage);
     NonLeafNodeInt * currNonLeafPage = (NonLeafNodeInt*) currPage;
@@ -468,8 +471,18 @@ const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const Page
                 break;
             }
         }
+        if(fromLeaf == false){
          currNonLeafPage -> keyArray[ currNonLeafPage -> slotTaken - i] = *((int *) key);
          currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - i] = leftPageId;
+        }
+        else{
+            // if the new key is inserted from a leaf node, then the new
+            // pageId param is acutally the rightPageId
+            PageId CorrectLeftPageId = currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - i + 1];
+            currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - i + 1] = leftPageId;
+            currNonLeafPage -> keyArray[ currNonLeafPage -> slotTaken - i] = *((int *) key);
+            currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken - i] = CorrectLeftPageId;
+        }
         // update the amount of slots being taken up in the
         // leaf index page
          currNonLeafPage -> slotTaken += 1;
@@ -483,7 +496,7 @@ const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const Page
         // unpin the current leaf page pinned in this function
         this -> bufMgr -> unPinPage(this -> file, pid, false);
         // we need to split this non-leaf page up into two parts
-        this -> splitNonLeafNode(pid, key, leftPageId, searchPath);
+        this -> splitNonLeafNode(pid, key, leftPageId, searchPath, fromLeaf);
     }
 }
 
@@ -492,11 +505,13 @@ const void BTreeIndex::insertNonLeafNode(PageId pid, const void *key, const Page
  * @param pid: the page id of the current non-leaf node, which is needed to be splitted
  * @param key: the new key needed to be inserted
  * @param leftPageId: the pageId of the newly created page in the lower level and need to insert this pageId on the left side of the new key
+ * Remark: if this key is actually inserted from a lower leaf page, then the newly created pageId is actually for the right pageId.
  * @param searchPath: a vector of PageId contains all the PageId of the pages we have
  *  visited along our search path. The purpose of this vector is to benefit our insert later.
  *  Remark: the searchPath does not contain the pageId of this current node.
+ *   @param: fromLeaf: is the bool var, true means inserting up from a leaf node. false means from a nonleaf node.
  */
-const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const PageId leftPageId, std::vector<PageId> & searchPath){
+const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const PageId leftPageId, std::vector<PageId> & searchPath, bool fromLeaf){
     // most part of this function should be similar to the splitLeafNode function. However, in this splitNonLeaf case, we don't copy,i.e. keep, the pushup value any more.
     // TODO.
     Page * currPage;
@@ -561,7 +576,14 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                     newNonLeafPage -> keyArray[i] = *((int *)key);
                     // it is remarked the right pageId of this new key
                     // has not been changed and it should still be pointing to the slots that this new key used to belong to.
-                    newNonLeafPage -> pageNoArray[i] = leftPageId;
+                    if(fromLeaf == false){
+                        newNonLeafPage -> pageNoArray[i] = leftPageId;
+                    }
+                    else{
+                        PageId trueLeftPageId = currNonLeafPage -> pageNoArray[i];
+                        currNonLeafPage -> pageNoArray[i] = leftPageId;
+                        newNonLeafPage -> pageNoArray[i] = trueLeftPageId;
+                    }
                     newNonLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
@@ -578,7 +600,14 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                     // Even though we don't copy or store the value of this key in any non-leaf node in this level, we cannot
                     // lose the pageId that this key is corresponding to.
                     // We will store the pageId corresponding to this pushup key at the end of the new non-leaf node.
-                newNonLeafPage -> pageNoArray[newNonLeafPage -> slotTaken] = leftPageId;
+                    if(fromLeaf == false){
+                        newNonLeafPage -> pageNoArray[newNonLeafPage -> slotTaken] = leftPageId;
+                    }
+                    else{
+                        PageId trueLeftPageId = currNonLeafPage -> pageNoArray[i];
+                        currNonLeafPage -> pageNoArray[i] = leftPageId;
+                        newNonLeafPage -> pageNoArray[newNonLeafPage -> slotTaken] = trueLeftPageId;
+                    }
                     newKeyInserted = true;
                 }
                 // this is the case where we have to insert this new key
@@ -587,7 +616,14 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
                     // shift down the slots in this current non-leaf page
                     // in this case, there are  currNonLeafPage -> slotTaken + 1 amount of slots having been moved away from this current non-leaf page already.
                      currNonLeafPage -> keyArray[i - newNonLeafPage -> slotTaken - 1] =  *((int*)key);
+                    if(fromLeaf == false){
                      currNonLeafPage -> pageNoArray[i - newNonLeafPage -> slotTaken - 1] =  leftPageId;
+                    }
+                    else{
+                        PageId trueLeftPageId = currNonLeafPage -> pageNoArray[i];
+                        currNonLeafPage -> pageNoArray[i] = leftPageId;
+                        currNonLeafPage -> pageNoArray[i - newNonLeafPage -> slotTaken - 1] =  trueLeftPageId;
+                    }
                      currNonLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
@@ -650,7 +686,7 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
         PageId parentId = searchPath[searchPath.size() - 1];
         // delete the parentId from the searchPath, to generate the search path for the parentId
         searchPath.erase(searchPath.begin() + searchPath.size() - 1);
-        this -> insertNonLeafNode(parentId, &pushup, newPageId, searchPath);
+        this -> insertNonLeafNode(parentId, &pushup, newPageId, searchPath, false);
     }
 }
 
