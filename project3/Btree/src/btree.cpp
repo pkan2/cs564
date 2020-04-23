@@ -17,6 +17,9 @@
 #include "exceptions/end_of_file_exception.h"
 #include "exceptions/page_not_pinned_exception.h"
 
+#include "exceptions/page_pinned_exception.h"
+#include "exceptions/bad_buffer_exception.h"
+
 //#define DEBUG
 
 namespace badgerdb
@@ -196,9 +199,21 @@ BTreeIndex::~BTreeIndex()
     // unpin all the pages from the index file, i.e. BlobFile
     // Flush this index file
     // the unpin process can be guaranteed by the endScan method already
-    this -> bufMgr -> flushFile(this -> file);
+    std::cout << "Destructor plans to flush the index file" << std::endl;
+    try{
+        this -> bufMgr -> flushFile(this -> file);
+    }
+    catch(PagePinnedException e){
+        std::cout << "flushfile throws PagePinnedException" << std::endl;
+    }
+    catch(BadBufferException e){
+        std::cout << "flushfile throws BadBufferException" << std::endl;
+    }
+    std::cout << "Destructor successfully flush the index file" << std::endl;
     // delete the index file
+    std::cout << "Destructor plan to delete the index file" << std::endl;
     delete this -> file;
+    std::cout << "tree file has been closed successfully by the destructor! " << std::endl;
 }
 
 // -----------------------------------------------------------------------------
@@ -314,20 +329,27 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
     bool newKeyInserted = false; // var to keep track whether the new
     // key has been inserted or not.
     int threshold; // # of keys to split up the non-leaf node
+    
     if(this -> leafOccupancy % 2 == 0){
         threshold = this -> leafOccupancy / 2;
     }
     else{
         threshold = this -> leafOccupancy / 2 + 1;
     }
-
+    
+    /*
+    // DEBUG ONLY
+    std::cout << "current key to insert with splitting: " << *((int*) key) << std::endl;
+    std::cout << "key value around the threshold: " << " [0]: " << currLeafPage -> keyArray[0]  << " [threshold - 1]: " << currLeafPage -> keyArray[threshold - 1] << " [threshold]: " << currLeafPage -> keyArray[threshold] << " [threshold + 1]: " << currLeafPage -> keyArray[threshold + 1] << " [threshold +2]: " << currLeafPage -> keyArray[threshold +2 ] << " [threshold +3]: " << currLeafPage -> keyArray[threshold + 3] << " [threshold +4]: " << currLeafPage -> keyArray[threshold + 4] << " [threshold + 5]: " << currLeafPage -> keyArray[threshold + 5] << " [threshold + 6]: " << currLeafPage -> keyArray[threshold + 6] << " [threshold + 7]: " << currLeafPage -> keyArray[threshold + 7] << std::endl;
+     */
+    
     for(int i= 0; i < this -> leafOccupancy; ++i){
         if(currLeafPage -> keyArray[this -> leafOccupancy - 1 - i] > *((int *)key)){
-            if(newLeafPage -> slotTaken <  this -> leafOccupancy - threshold){
+            if(newLeafPage -> slotTaken <  this -> leafOccupancy + 1 - threshold){
                 // this is the case that we should still insert into
                 // the new leaf node
-                newLeafPage -> keyArray[this -> leafOccupancy - threshold - 1 - i] = currLeafPage -> keyArray[this -> leafOccupancy - 1 - i];
-                newLeafPage -> ridArray[this -> leafOccupancy - threshold - 1 - i] = currLeafPage -> ridArray[this -> leafOccupancy - 1 - i];
+                newLeafPage -> keyArray[this -> leafOccupancy  + 1 - threshold - 1 - i] = currLeafPage -> keyArray[this -> leafOccupancy - 1 - i];
+                newLeafPage -> ridArray[this -> leafOccupancy + 1 - threshold - 1 - i] = currLeafPage -> ridArray[this -> leafOccupancy - 1 - i];
                 newLeafPage -> slotTaken += 1;
                 currLeafPage -> slotTaken -= 1;
             }
@@ -335,18 +357,23 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
                 // the new leaf has been filled up to the specified amount
                 // already
                 
-                 
-                  // DEBUG ONLY
-                  if(newLeafPage -> slotTaken !=  this -> leafOccupancy - threshold)
-                 std::cout << "the slotTaken value of the new leaf is wrong at (1)! Current slotTaken amount is " << newLeafPage -> slotTaken << " expect to be " << this -> leafOccupancy - threshold << std::endl;
-                 if(currLeafPage -> slotTaken != threshold)
-                 std::cout << "the slotTaken value of the current leaf is wrong at (1)! Current slotTaken amount is " << currLeafPage -> slotTaken << " expect to be " <<  threshold << std::endl;
-                 
-                 
                 // shift up the slots in this current leaf page, to make
                 // space for the new key value
                 currLeafPage -> keyArray[this -> leafOccupancy - i] =  currLeafPage -> keyArray[this -> leafOccupancy - 1 - i];
                 currLeafPage -> ridArray[this -> leafOccupancy - i] =  currLeafPage -> ridArray[this -> leafOccupancy - 1 - i];
+                /*
+                // DEBUG ONLY
+                if(i == newLeafPage -> slotTaken)
+                    std::cout << "Finish filling up the new leaf in the splitting now: " <<"key value around the threshold: "<< " [threshold - 2] still in old array (this should be not be updated with shifting yet!): " << currLeafPage -> keyArray[threshold - 2] << " [threshold - 1] still in old array (this should be updated with shifting!): " << currLeafPage -> keyArray[threshold - 1] << " [threshold] in new array[0]: " << newLeafPage -> keyArray[0] << " [threshold + 1]: " << newLeafPage -> keyArray[1] << " [threshold +2]: " << newLeafPage -> keyArray[2] << " [threshold +3]: " << newLeafPage -> keyArray[3] << " [threshold +4]: " << newLeafPage -> keyArray[4] << " [threshold + 5]: " << newLeafPage -> keyArray[5] << " [threshold + 6]: " << newLeafPage -> keyArray[6] << " [threshold + 7]: " << newLeafPage -> keyArray[7] << std::endl;
+                */
+                 
+                // this is the case where all the keys in the original current leaf are actually larger than the new inserted key. Then, as i is only in range of the amount of total amount of keys in the original current leaf, we never get a chance to insert the new key value.
+                if(i + 1 == this -> leafOccupancy){
+                    currLeafPage -> keyArray[this -> leafOccupancy - 1 - i] = *((int*) key);
+                    currLeafPage -> ridArray[this -> leafOccupancy - 1 - i] = rid;
+                    currLeafPage -> slotTaken += 1;
+                    newKeyInserted = true;
+                }
             }
         }
         else{
@@ -354,18 +381,18 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
                 // this is the first time we meet an exisitng key
                 // larger than the new key value.
                 // We should insert in the new key first.
-                if(newLeafPage -> slotTaken <  this -> leafOccupancy - threshold){
-                    newLeafPage -> keyArray[this -> leafOccupancy - threshold - 1 - i] = *((int*)key);
-                    newLeafPage -> ridArray[this -> leafOccupancy - threshold - 1 - i] = rid;
+                if(newLeafPage -> slotTaken <  this -> leafOccupancy + 1 - threshold){
+                    newLeafPage -> keyArray[this -> leafOccupancy + 1 - threshold - 1 - i] = *((int*)key);
+                    newLeafPage -> ridArray[this -> leafOccupancy + 1 - threshold - 1 - i] = rid;
                     newLeafPage -> slotTaken += 1;
                     newKeyInserted = true;
                 }
                 else{
                    
                     // DEBUG ONLY
-                    if(newLeafPage -> slotTaken !=  this -> leafOccupancy - threshold)
+                    if(newLeafPage -> slotTaken !=  this -> leafOccupancy + 1 - threshold)
                     std::cout << "the slotTaken value of the new leaf is wrong at (2)! Current slotTaken amount is " << newLeafPage -> slotTaken << " expect to be " << this -> leafOccupancy - threshold << std::endl;
-                    if(currLeafPage -> slotTaken != threshold)
+                    if(currLeafPage -> slotTaken != threshold - 1)
                     std::cout << "the slotTaken value of the current leaf is wrong at (2)! Current slotTaken amount is " << currLeafPage -> slotTaken << " expect to be " <<  threshold << std::endl;
                     
                     
@@ -379,18 +406,18 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
             // this is the part under when the new key has been
             // inserted already
             // now, we have to re-position the original (leafOccupancy - i - 1) - th slot of the current leaf node
-            if(newLeafPage -> slotTaken <  this -> leafOccupancy - threshold){
-                newLeafPage -> keyArray[this -> leafOccupancy - threshold - 2 - i] = currLeafPage -> keyArray[this -> leafOccupancy - i - 1];
-                newLeafPage -> ridArray[this -> leafOccupancy - threshold - 2 - i] = currLeafPage -> ridArray[this -> leafOccupancy - i - 1];
+            if(newLeafPage -> slotTaken <  this -> leafOccupancy + 1 - threshold){
+                newLeafPage -> keyArray[this -> leafOccupancy + 1 - threshold - 2 - i] = currLeafPage -> keyArray[this -> leafOccupancy - i - 1];
+                newLeafPage -> ridArray[this -> leafOccupancy + 1 - threshold - 2 - i] = currLeafPage -> ridArray[this -> leafOccupancy - i - 1];
                 newLeafPage -> slotTaken += 1;
                 currLeafPage -> slotTaken -= 1;
             }
             else{
                 
                 // DEBUG ONLY
-                if(newLeafPage -> slotTaken !=  this -> leafOccupancy - threshold)
+                if(newLeafPage -> slotTaken !=  this -> leafOccupancy + 1 - threshold)
                 std::cout << "the slotTaken value of the new leaf is wrong at (3)! Current slotTaken amount is " << newLeafPage -> slotTaken << " expect to be " << this -> leafOccupancy - threshold << std::endl;
-                 if(currLeafPage -> slotTaken != threshold + 1)
+                 if(currLeafPage -> slotTaken != threshold)
                  std::cout << "the slotTaken value of the current leaf is wrong at (3)! Current slotTaken amount is " << currLeafPage -> slotTaken << " expect to be " <<  threshold + 1<< std::endl;
                 
                 // this is the case where the filling of the new leaf is done
@@ -730,8 +757,17 @@ const void BTreeIndex::searchLeafPageWithKey(const void *key, PageId & pid, Page
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, currentPageId, currPage);
     NonLeafNodeInt * currNode = (NonLeafNodeInt *) currPage;
+    /*
+    //DEBUG
+    std::cout << "current page id: " << currentPageId <<" , keys in this page: ";
+    for(int i = 0; i < currNode -> slotTaken; ++i){
+        std::cout << currNode -> keyArray[i] << " ";
+    }
+    std::cout << std::endl;
+     */
     int targetIndex = 0;
     int slotAvailable = currNode -> slotTaken;
+    /*
     while(targetIndex < slotAvailable){
                   if((lowOp == GT || lowOp == GTE) && *((int *) key) < currNode -> keyArray[targetIndex]){
                       break;
@@ -740,6 +776,15 @@ const void BTreeIndex::searchLeafPageWithKey(const void *key, PageId & pid, Page
                       targetIndex++;
                   }
               }
+    */
+    while(targetIndex < slotAvailable){
+        if(*((int *) key) < currNode -> keyArray[targetIndex]){
+            break;
+        }
+        else{
+            targetIndex++;
+        }
+    }
     PageId updateCurrPageNum = currNode -> pageNoArray[targetIndex];
     // check if the next lower level node is leaf node or not
     if(currNode -> level == 1){
@@ -842,6 +887,9 @@ const void BTreeIndex::startScan(const void* lowValParm,
     this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
     LeafNodeInt * leafNode = (LeafNodeInt*) currentPageData;
     
+    // DEBUG
+    std::cout << "page search pid : "<< pid << " , slots taken: " << leafNode -> slotTaken << " , first few keys: " << leafNode -> keyArray[0] << " , second elem: " << leafNode -> keyArray[1] << std::endl;
+    
     this -> nextEntry = -1;
     
     // find the correct initial value for the nextEntry
@@ -914,22 +962,28 @@ const void BTreeIndex::scanNext(RecordId& outRid)
     if(this -> nextEntry == -2){
         // since the scaning is complete, we should
         // unpin this current page.
+        std::cout << "scan is done with page num: " <<this -> currentPageNum << std::endl;
+        /*
         try{
             this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
         }
         catch(PageNotPinnedException e){
         }
+         */
+        std::cout << "unpin with page num is done as scna complete: " <<this -> currentPageNum << std::endl;
         throw IndexScanCompletedException();
     }
     // Fetch the record id of the next index entry that matches the scan.
     LeafNodeInt * currPage = (LeafNodeInt *) (this -> currentPageData);
     // Return the next record from current page being scanned.
-    /*
+    
      // DEBUG ONLY
+    /*
     std::cout << "key value associate with the rid: " << currPage -> keyArray[this -> nextEntry] << std::endl;
     std::cout << "entry value: " << this -> nextEntry << std::endl;
     std::cout << "slot amount taken: " << currPage -> slotTaken << std::endl;
-     */
+    */
+     
     outRid = currPage -> ridArray[this -> nextEntry];
     // move the scanner to the next satisfied record
     // check whether theer is more records in this current leaf node or not
@@ -947,6 +1001,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                 else{
                     // this case is where there is no more satisifed
                     // entry existing. I.e. the scan is complete
+                    std::cout << "this is the last page to scan with pageId(1): " << this -> currentPageNum<<std::endl;
                     this -> nextEntry = -2;
                     return;
                 }
@@ -959,6 +1014,7 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                 else{
                     // this case is where there is no more satisifed
                     // entry existing. I.e. the scan is complete
+                    std::cout << "this is the last page to scan with pageId(2): " << this -> currentPageNum<<std::endl;
                     this -> nextEntry = -2;
                     return;
                 }
@@ -974,7 +1030,8 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         if(currPage  -> rightSibPageNo == Page::INVALID_NUMBER){
             // this case is where there is no more satisifed
             // entry existing. I.e. the scan is complete
-            //std::cout << "stop at here! no more right sib!" << std::endl;
+            std::cout << "stop at here! no more right sib!" << std::endl;
+            std::cout << "this is the last page to scan with pageId(3): " << this -> currentPageNum<<std::endl;
             this -> nextEntry = -2;
             // this is the case of reaching the end of current index page:
             // unpin this current page
@@ -1002,7 +1059,8 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                 // this is the case where the first slot has not been
                 // taken yet. Then this leaf index page has not been
                 // taken with any records yet.
-                //std::cout << "stop at here! no new records in the new page!" << std::endl;
+                std::cout << "stop at here! no new records in the new page!" << std::endl;
+                std::cout << "this is the last page to scan with pageId(4): " << this -> currentPageNum<<std::endl;
                 this -> nextEntry = -2;
                 return;
             }
@@ -1015,11 +1073,11 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                     else{
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
-                        /*
+                        
                         std::cout << "stop at here! no more valid new record! 1111" << std::endl;
                         //std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
                         //std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
-                         */
+                         std::cout << "this is the last page to scan with pageId(5): " << this -> currentPageNum<<std::endl;
                         this -> nextEntry = -2;
                     }
                     break;
@@ -1030,11 +1088,11 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                     else{
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
-                        /*
+                        
                         std::cout << "stop at here! no more valid new record! 22222" << std::endl;
                         std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
                         std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
-                         */
+                         std::cout << "this is the last page to scan with pageId(6): " << this -> currentPageNum<<std::endl;
                         this -> nextEntry = -2;
                     }
                     break;
@@ -1057,15 +1115,25 @@ const void BTreeIndex::scanNext(RecordId& outRid)
  */
 const void BTreeIndex::endScan() 
 {
+    std::cout << "Get into the endScan now! " << std::endl;
+    
     // the case where there is no scan being initialized.
     if(this -> scanExecuting == false){
         throw ScanNotInitializedException();
     }
     // unpin the current page
     try{
+        std::cout << "Endscan plan to unpin currrentPageNum: " << this -> currentPageNum << ", root is at: " << this -> rootPageNum<< std::endl;
+        /*
+        // DEBUG ONLY
+        LeafNodeInt * currPage = ((LeafNodeInt *) currentPageData);
+        std::cout << "info on current page: slotTaken: "<< currPage -> slotTaken << " , elem at 0: " << currPage -> keyArray[0] << " , elem at 1: " << currPage -> keyArray[1] << " , elem at 2: " << currPage -> keyArray[2] <<  " , elem at slotTaken:  " << currPage -> keyArray[currPage -> slotTaken - 1] << std::endl;
+         */
         this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+        std::cout << "Endscan finishes unpin currrentPageNum " << std::endl;
     }
     catch(PageNotPinnedException e){
+         std::cout << "the page is not pined!!! " << std::endl;
     }
     // recover all the values for the variables of scanning
     switch(this -> attributeType){
@@ -1089,6 +1157,9 @@ const void BTreeIndex::endScan()
     this -> currentPageData = NULL;
     this -> lowOp = (Operator)-1;
     this -> highOp = (Operator)-1;
+    
+    std::cout << "Get out of  the endScan now! " << std::endl;
 }
+
 
 }
