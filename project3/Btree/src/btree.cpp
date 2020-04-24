@@ -102,33 +102,34 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
     
     // check if the index file is already existing or not
     if(File::exists(indexName)){
-        BlobFile file =  BlobFile::open(indexName);
+        BlobFile* newfile = new BlobFile(outIndexName, false);
+        File * file = (File*) newfile;
         // check whether the existing file matching with our input info
-        // find the meta page
-        PageId metaPageId = file.getFirstPageNo();
+        // find the meta page, which is specified to be 1
+        PageId metaPageId = 1;
         Page * metaPage;
-        this -> bufMgr -> readPage(&file, metaPageId, metaPage);
+        this -> bufMgr -> readPage(file, metaPageId, metaPage);
         IndexMetaInfo * metaInfo = (IndexMetaInfo *) metaPage;
         // check the attribute in the meta page
         if(!(metaInfo -> relationName == relationName
            && metaInfo -> attrByteOffset == attrByteOffset
            && metaInfo -> attrType == attrType)){
-            this -> bufMgr -> unPinPage(&file, metaPageId, false);
+            this -> bufMgr -> unPinPage(file, metaPageId, false);
             throw BadIndexInfoException("Index file exists but values in metapage not match.");
         }
         this -> headerPageNum = metaPageId;
         this -> rootPageNum = metaInfo -> rootPageNo;
-        this -> file = (&file);
-        this -> bufMgr -> unPinPage(&file, metaPageId, false);
+        this -> file = file;
+        this -> bufMgr -> unPinPage(this -> file, metaPageId, false);
         return;
     }
     
-    BlobFile file = BlobFile::create(indexName);
-    this -> file = & file;
+    BlobFile* newFile = new BlobFile(outIndexName, true);
+    this -> file = (File *) newFile;
     // create the metadata page
     PageId metaPageId;
     Page * metaPage;
-    this -> bufMgr -> allocPage(&file, metaPageId, metaPage);
+    this -> bufMgr -> allocPage(this -> file, metaPageId, metaPage);
     IndexMetaInfo * metaInfo = (IndexMetaInfo *) metaPage;
     // write the input attributes into the metaPage
     strcpy(metaInfo -> relationName, relationName.c_str());
@@ -140,18 +141,18 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
     // update the root page attribute in the metaPage
     PageId rootPageId;
     Page * rootPage;
-    this -> bufMgr -> allocPage(&file, rootPageId, rootPage);
+    this -> bufMgr -> allocPage(this -> file, rootPageId, rootPage);
     // initialize value of the vars in the rootPage, which is firstly
     // initialized as a leaf node.
     ((LeafNodeInt *) rootPage) -> slotTaken = 0;
     ((LeafNodeInt *) rootPage) -> rightSibPageNo = Page::INVALID_NUMBER;
-    this -> bufMgr -> unPinPage(&file, rootPageId, true);
+    this -> bufMgr -> unPinPage(this -> file, rootPageId, true);
     metaInfo -> rootPageNo = rootPageId;
     this -> rootPageNum = rootPageId;
     // the initial index page for root is actually a leaf node, since
     // this is the only node as the start.
     this -> rootIsLeaf = true;
-    this -> bufMgr -> unPinPage(&file, metaPageId, true);
+    this -> bufMgr -> unPinPage(this -> file, metaPageId, true);
     // scan the relation and insert into the index file
     FileScan * fileScan = new FileScan(relationName, bufMgrIn);
     try
@@ -199,21 +200,15 @@ BTreeIndex::~BTreeIndex()
     // unpin all the pages from the index file, i.e. BlobFile
     // Flush this index file
     // the unpin process can be guaranteed by the endScan method already
-    std::cout << "Destructor plans to flush the index file" << std::endl;
-    try{
-        this -> bufMgr -> flushFile(this -> file);
-    }
-    catch(PagePinnedException e){
-        std::cout << "flushfile throws PagePinnedException" << std::endl;
-    }
-    catch(BadBufferException e){
-        std::cout << "flushfile throws BadBufferException" << std::endl;
-    }
-    std::cout << "Destructor successfully flush the index file" << std::endl;
+    /*
+    // DEBUG ONLY
+     this -> bufMgr -> printSelf();
+     */
+    
+    this -> bufMgr -> flushFile(this -> file);
+    
     // delete the index file
-    std::cout << "Destructor plan to delete the index file" << std::endl;
     delete this -> file;
-    std::cout << "tree file has been closed successfully by the destructor! " << std::endl;
 }
 
 // -----------------------------------------------------------------------------
@@ -337,12 +332,6 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
         threshold = this -> leafOccupancy / 2 + 1;
     }
     
-    /*
-    // DEBUG ONLY
-    std::cout << "current key to insert with splitting: " << *((int*) key) << std::endl;
-    std::cout << "key value around the threshold: " << " [0]: " << currLeafPage -> keyArray[0]  << " [threshold - 1]: " << currLeafPage -> keyArray[threshold - 1] << " [threshold]: " << currLeafPage -> keyArray[threshold] << " [threshold + 1]: " << currLeafPage -> keyArray[threshold + 1] << " [threshold +2]: " << currLeafPage -> keyArray[threshold +2 ] << " [threshold +3]: " << currLeafPage -> keyArray[threshold + 3] << " [threshold +4]: " << currLeafPage -> keyArray[threshold + 4] << " [threshold + 5]: " << currLeafPage -> keyArray[threshold + 5] << " [threshold + 6]: " << currLeafPage -> keyArray[threshold + 6] << " [threshold + 7]: " << currLeafPage -> keyArray[threshold + 7] << std::endl;
-     */
-    
     for(int i= 0; i < this -> leafOccupancy; ++i){
         if(currLeafPage -> keyArray[this -> leafOccupancy - 1 - i] > *((int *)key)){
             if(newLeafPage -> slotTaken <  this -> leafOccupancy + 1 - threshold){
@@ -361,12 +350,7 @@ const void BTreeIndex::splitLeafNode(PageId pid, const void *key,  const RecordI
                 // space for the new key value
                 currLeafPage -> keyArray[this -> leafOccupancy - i] =  currLeafPage -> keyArray[this -> leafOccupancy - 1 - i];
                 currLeafPage -> ridArray[this -> leafOccupancy - i] =  currLeafPage -> ridArray[this -> leafOccupancy - 1 - i];
-                /*
-                // DEBUG ONLY
-                if(i == newLeafPage -> slotTaken)
-                    std::cout << "Finish filling up the new leaf in the splitting now: " <<"key value around the threshold: "<< " [threshold - 2] still in old array (this should be not be updated with shifting yet!): " << currLeafPage -> keyArray[threshold - 2] << " [threshold - 1] still in old array (this should be updated with shifting!): " << currLeafPage -> keyArray[threshold - 1] << " [threshold] in new array[0]: " << newLeafPage -> keyArray[0] << " [threshold + 1]: " << newLeafPage -> keyArray[1] << " [threshold +2]: " << newLeafPage -> keyArray[2] << " [threshold +3]: " << newLeafPage -> keyArray[3] << " [threshold +4]: " << newLeafPage -> keyArray[4] << " [threshold + 5]: " << newLeafPage -> keyArray[5] << " [threshold + 6]: " << newLeafPage -> keyArray[6] << " [threshold + 7]: " << newLeafPage -> keyArray[7] << std::endl;
-                */
-                 
+               
                 // this is the case where all the keys in the original current leaf are actually larger than the new inserted key. Then, as i is only in range of the amount of total amount of keys in the original current leaf, we never get a chance to insert the new key value.
                 if(i + 1 == this -> leafOccupancy){
                     currLeafPage -> keyArray[this -> leafOccupancy - 1 - i] = *((int*) key);
@@ -591,7 +575,6 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
     }
     for(int i= 0; i < this -> nodeOccupancy; ++i){
         if( currNonLeafPage -> keyArray[i] < *((int *)key)){
-            // here we actually aussme that the leafOccupancy is an even number
             if(newNonLeafPage -> slotTaken < threshold){
                 newNonLeafPage -> keyArray[i] =  currNonLeafPage -> keyArray[i];
                 newNonLeafPage -> pageNoArray[i] =  currNonLeafPage -> pageNoArray[i];
@@ -715,12 +698,43 @@ const void BTreeIndex::splitNonLeafNode(PageId pid, const void *key,  const Page
             }
         }
     }
+    
     // it is remarked that during the for loop, we are only
     // shifting the pair of (leftPageId, key) around the current non-leaf node.
     // However, the original pageId at the end of the current non-leaf node has not been checked yet.
-    // Now, we should move the original pageId at the end of the current non-leaf node, index at leafOccupancy, to the correct position,
+    // Now, we should move the original pageId at the end of the current non-leaf node, index at nodeOccupancy, to the correct position,
     // which should be the end of the updated pageNoArray of this current non-leaf node, at index  currNonLeafPage -> slotTaken.
-     currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken] =  currNonLeafPage -> pageNoArray[this -> leafOccupancy];
+     currNonLeafPage -> pageNoArray[currNonLeafPage -> slotTaken] =  currNonLeafPage -> pageNoArray[this -> nodeOccupancy];
+    
+    // another speical case is when all the keys in current non-leaf node are smaller than the new key.
+    // Then, based on the current code, we have not inserted the new key yet.
+    if(newKeyInserted == false){
+        
+        // DEBUG ONLY
+        if(currNonLeafPage -> slotTaken + newNonLeafPage -> slotTaken != this -> nodeOccupancy)
+            std::cout << "the specail case of all keys smaller than new is wrong! the new key is inserted already!" << std::endl;
+        
+        currNonLeafPage -> pageNoArray[currNonLeafPage -> slotTaken] = *((int *) key);
+        if(fromLeaf == false){
+            // the pageId currently at the end of the list should be on the right of this key
+            PageId trueRightPage = currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken];
+            currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken] = leftPageId;
+            currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken + 1] = trueRightPage;
+        }
+        else{
+            currNonLeafPage -> pageNoArray[ currNonLeafPage -> slotTaken + 1] = leftPageId;
+        }
+        newKeyInserted = true;
+        currNonLeafPage -> slotTaken += 1;
+    }
+    
+    // DEBUG ONLY:
+    // to check wether some key and pageId pairs are missing
+    if(currNonLeafPage -> slotTaken + newNonLeafPage -> slotTaken != this -> nodeOccupancy + 1)
+        std::cout << "the final amount of inserting key into non-leaf and split is wrong!!!! And current total amount is: " << currNonLeafPage -> slotTaken + newNonLeafPage -> slotTaken << " , but expected to be: "<< this -> nodeOccupancy + 1 << std::endl;
+    // check whether the new key has been inserted
+    if(newKeyInserted == false)
+        std::cout << "the new key has not been inserted yet!!!!" << std::endl;
     
     this -> bufMgr -> unPinPage(this -> file, pid, true);
     this -> bufMgr -> unPinPage(this -> file, newPageId, true);
@@ -757,26 +771,10 @@ const void BTreeIndex::searchLeafPageWithKey(const void *key, PageId & pid, Page
     Page * currPage;
     this -> bufMgr -> readPage(this -> file, currentPageId, currPage);
     NonLeafNodeInt * currNode = (NonLeafNodeInt *) currPage;
-    /*
-    //DEBUG
-    std::cout << "current page id: " << currentPageId <<" , keys in this page: ";
-    for(int i = 0; i < currNode -> slotTaken; ++i){
-        std::cout << currNode -> keyArray[i] << " ";
-    }
-    std::cout << std::endl;
-     */
+
     int targetIndex = 0;
     int slotAvailable = currNode -> slotTaken;
-    /*
-    while(targetIndex < slotAvailable){
-                  if((lowOp == GT || lowOp == GTE) && *((int *) key) < currNode -> keyArray[targetIndex]){
-                      break;
-                  }
-                  else{
-                      targetIndex++;
-                  }
-              }
-    */
+    
     while(targetIndex < slotAvailable){
         if(*((int *) key) < currNode -> keyArray[targetIndex]){
             break;
@@ -825,6 +823,44 @@ const void BTreeIndex::startScan(const void* lowValParm,
 				   const void* highValParm,
 				   const Operator highOpParm)
 {
+    /*
+    // DEBUG ONLY
+    // check whether the non-leaf node structure are correct
+    // we will search leaf page and slot location in leaf for all possible keys ranging from 0 to 4999
+    int upperbound = 5000;
+    for(int i = 0; i < upperbound; ++i){
+        PageId testPid; // the page potentially containing the lowVal we want to find
+        std::vector<PageId> testSearchPath; // the vector containing the path along searching
+        
+        // traverse from the root to find the first satisfied page
+        // remember to unpin while traverse
+        //check if the root is actually a leaf node
+        
+        this -> searchLeafPageWithKey(&i, testPid, this -> rootPageNum, testSearchPath);
+        Page * testPage;
+        this -> bufMgr -> readPage(this -> file, testPid, testPage);
+        LeafNodeInt * testLeafNode = (LeafNodeInt*) testPage;
+        
+        int location = -1;
+        
+        // find the correct initial value for the nextEntry
+        for(int j = 0; j < testLeafNode -> slotTaken; j++){
+            // based on the assumpetion that we will only consider the case
+            // of key as interger
+            if(i == (int)testLeafNode -> keyArray[j]){
+                location = j;
+                break;
+            }
+        }
+     
+        if(location == -1){
+            std::cout << "The non-leaf page structure is wrong! Cannot find the page path toward the page containing key: "<< i << std::endl;
+        }
+        this -> bufMgr -> unPinPage(this -> file, testPid, false);
+    }
+    std::cout << "All key has been searched!" << std::endl;
+    */
+    
     if(lowOpParm != GT && lowOpParm != GTE){
         throw BadOpcodesException();
     }
@@ -886,10 +922,10 @@ const void BTreeIndex::startScan(const void* lowValParm,
     this -> currentPageNum = pid;
     this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
     LeafNodeInt * leafNode = (LeafNodeInt*) currentPageData;
-    
-    // DEBUG
+    /*
+    // DEBUG ONLY
     std::cout << "page search pid : "<< pid << " , slots taken: " << leafNode -> slotTaken << " , first few keys: " << leafNode -> keyArray[0] << " , second elem: " << leafNode -> keyArray[1] << std::endl;
-    
+    */
     this -> nextEntry = -1;
     
     // find the correct initial value for the nextEntry
@@ -913,6 +949,7 @@ const void BTreeIndex::startScan(const void* lowValParm,
     // this required lower bound of key, in our potential containing leaf page.
     if(this -> nextEntry == -1){
         // throw error if none satisfied page exist, and call endScan before throwing
+        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
         endScan();
         throw NoSuchKeyFoundException();
     }
@@ -925,9 +962,11 @@ const void BTreeIndex::startScan(const void* lowValParm,
         (leafNode -> keyArray[nextEntry] == highValInt && highOp == LT))
         {
           // throw error if none satisfied page exist, and call endScan before throwing
+          this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
           endScan();
           throw NoSuchKeyFoundException();
         }
+    this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
 }
 
 // -----------------------------------------------------------------------------
@@ -956,21 +995,27 @@ const void BTreeIndex::scanNext(RecordId& outRid)
     if(this -> scanExecuting == false){
         throw ScanNotInitializedException();
     }
+    this -> bufMgr -> readPage(this -> file, this -> currentPageNum, this -> currentPageData);
     // If no more records, satisfying the scan criteria, are left to be scanned.
     // we use the nextEntry == -2 to represent that there is no more
     // satisfied records later. I.e. the scanning is complete.
     if(this -> nextEntry == -2){
         // since the scaning is complete, we should
         // unpin this current page.
-        std::cout << "scan is done with page num: " <<this -> currentPageNum << std::endl;
-        /*
+        
+        //DEBUG ONLY
+        //std::cout << "scan is done with page num: " <<this -> currentPageNum << std::endl;
+        
+         // there is issue happening if we repeatedly unpin a page
+         // the catch seems not working. Or there is different seg fault
+         // being thrown out.
         try{
             this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
         }
         catch(PageNotPinnedException e){
         }
-         */
-        std::cout << "unpin with page num is done as scna complete: " <<this -> currentPageNum << std::endl;
+        
+        //std::cout << "unpin with page num is done as scan complete: " <<this -> currentPageNum << std::endl;
         throw IndexScanCompletedException();
     }
     // Fetch the record id of the next index entry that matches the scan.
@@ -996,12 +1041,23 @@ const void BTreeIndex::scanNext(RecordId& outRid)
             case LT:
                 if(currPage  -> keyArray[this -> nextEntry + 1] < highValInt){
                     this -> nextEntry += 1;
+                    try{
+                        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+                    }
+                    catch(PageNotPinnedException e){
+                    }
                     return;
                 }
                 else{
                     // this case is where there is no more satisifed
                     // entry existing. I.e. the scan is complete
-                    std::cout << "this is the last page to scan with pageId(1): " << this -> currentPageNum<<std::endl;
+                    
+                    //std::cout << "this is the last page to scan with pageId(1): " << this -> currentPageNum<<std::endl;
+                    try{
+                        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+                    }
+                    catch(PageNotPinnedException e){
+                    }
                     this -> nextEntry = -2;
                     return;
                 }
@@ -1009,13 +1065,24 @@ const void BTreeIndex::scanNext(RecordId& outRid)
             case LTE:
                 if(currPage  -> keyArray[this -> nextEntry + 1] <= highValInt){
                     this -> nextEntry += 1;
+                    try{
+                        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+                    }
+                    catch(PageNotPinnedException e){
+                    }
                     return;
                 }
                 else{
                     // this case is where there is no more satisifed
                     // entry existing. I.e. the scan is complete
-                    std::cout << "this is the last page to scan with pageId(2): " << this -> currentPageNum<<std::endl;
+                    
+                    //std::cout << "this is the last page to scan with pageId(2): " << this -> currentPageNum<<std::endl;
                     this -> nextEntry = -2;
+                    try{
+                        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+                    }
+                    catch(PageNotPinnedException e){
+                    }
                     return;
                 }
                 break;
@@ -1030,8 +1097,11 @@ const void BTreeIndex::scanNext(RecordId& outRid)
         if(currPage  -> rightSibPageNo == Page::INVALID_NUMBER){
             // this case is where there is no more satisifed
             // entry existing. I.e. the scan is complete
-            std::cout << "stop at here! no more right sib!" << std::endl;
-            std::cout << "this is the last page to scan with pageId(3): " << this -> currentPageNum<<std::endl;
+            
+            //DEBUG ONLY
+            //std::cout << "stop at here! no more right sib!" << std::endl;
+            //std::cout << "this is the last page to scan with pageId(3): " << this -> currentPageNum<<std::endl;
+            
             this -> nextEntry = -2;
             // this is the case of reaching the end of current index page:
             // unpin this current page
@@ -1059,9 +1129,17 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                 // this is the case where the first slot has not been
                 // taken yet. Then this leaf index page has not been
                 // taken with any records yet.
-                std::cout << "stop at here! no new records in the new page!" << std::endl;
-                std::cout << "this is the last page to scan with pageId(4): " << this -> currentPageNum<<std::endl;
+                
+                // DEBUG ONLY
+                //std::cout << "stop at here! no new records in the new page!" << std::endl;
+                //std::cout << "this is the last page to scan with pageId(4): " << this -> currentPageNum<<std::endl;
+                
                 this -> nextEntry = -2;
+                try{
+                    this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+                }
+                catch(PageNotPinnedException e){
+                }
                 return;
             }
             // check whether the first record in the new index page is still satisfied
@@ -1074,10 +1152,11 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
                         
-                        std::cout << "stop at here! no more valid new record! 1111" << std::endl;
+                        // DEBUG ONLY
                         //std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
                         //std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
-                         std::cout << "this is the last page to scan with pageId(5): " << this -> currentPageNum<<std::endl;
+                         //std::cout << "this is the last page to scan with pageId(5): " << this -> currentPageNum<<std::endl;
+                        
                         this -> nextEntry = -2;
                     }
                     break;
@@ -1089,15 +1168,21 @@ const void BTreeIndex::scanNext(RecordId& outRid)
                         // this case is where there is no more satisifed
                         // entry existing. I.e. the scan is complete
                         
-                        std::cout << "stop at here! no more valid new record! 22222" << std::endl;
-                        std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
-                        std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
-                         std::cout << "this is the last page to scan with pageId(6): " << this -> currentPageNum<<std::endl;
+                        // DEBUG ONLY
+                        //std::cout << "current vlaue in key array " << currPage -> keyArray[0]  << std::endl;
+                        //std::cout << "current slot amount in this array " << currPage -> slotTaken  << std::endl;
+                         //std::cout << "this is the last page to scan with pageId(6): " << this -> currentPageNum<<std::endl;
+                        
                         this -> nextEntry = -2;
                     }
                     break;
                 default:
                     break;
+            }
+            try{
+                this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
+            }
+            catch(PageNotPinnedException e){
             }
         }
     }
@@ -1121,20 +1206,7 @@ const void BTreeIndex::endScan()
     if(this -> scanExecuting == false){
         throw ScanNotInitializedException();
     }
-    // unpin the current page
-    try{
-        std::cout << "Endscan plan to unpin currrentPageNum: " << this -> currentPageNum << ", root is at: " << this -> rootPageNum<< std::endl;
-        /*
-        // DEBUG ONLY
-        LeafNodeInt * currPage = ((LeafNodeInt *) currentPageData);
-        std::cout << "info on current page: slotTaken: "<< currPage -> slotTaken << " , elem at 0: " << currPage -> keyArray[0] << " , elem at 1: " << currPage -> keyArray[1] << " , elem at 2: " << currPage -> keyArray[2] <<  " , elem at slotTaken:  " << currPage -> keyArray[currPage -> slotTaken - 1] << std::endl;
-         */
-        this -> bufMgr -> unPinPage(this -> file, this -> currentPageNum, false);
-        std::cout << "Endscan finishes unpin currrentPageNum " << std::endl;
-    }
-    catch(PageNotPinnedException e){
-         std::cout << "the page is not pined!!! " << std::endl;
-    }
+    
     // recover all the values for the variables of scanning
     switch(this -> attributeType){
         case INTEGER:
