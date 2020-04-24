@@ -17,9 +17,6 @@
 #include "exceptions/end_of_file_exception.h"
 #include "exceptions/page_not_pinned_exception.h"
 
-#include "exceptions/page_pinned_exception.h"
-#include "exceptions/bad_buffer_exception.h"
-
 //#define DEBUG
 
 namespace badgerdb
