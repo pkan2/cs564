@@ -1200,8 +1200,6 @@ const void BTreeIndex::scanNext(RecordId& outRid)
  */
 const void BTreeIndex::endScan() 
 {
-    std::cout << "Get into the endScan now! " << std::endl;
-    
     // the case where there is no scan being initialized.
     if(this -> scanExecuting == false){
         throw ScanNotInitializedException();
@@ -1229,8 +1227,6 @@ const void BTreeIndex::endScan()
     this -> currentPageData = NULL;
     this -> lowOp = (Operator)-1;
     this -> highOp = (Operator)-1;
-    
-    std::cout << "Get out of  the endScan now! " << std::endl;
 }
 
 

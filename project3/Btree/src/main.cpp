@@ -73,10 +73,6 @@ void indexTests();
 void test1();
 void test2();
 void test3();
-void test4();
-void test5();
-void test6();
-void test7();
 void errorTests();
 void deleteRelation();
 
@@ -144,11 +140,7 @@ int main(int argc, char **argv)
 	test1();
 	test2();
 	test3();
-    test4();
-    test5();
-    test6();
-    test7();
-	errorTests();
+	//errorTests();
 
   return 1;
 }
@@ -185,64 +177,6 @@ void test3()
 	indexTests();
 	deleteRelation();
 }
-// -----------------------------------------------------------------------------
-// added test case
-// -----------------------------------------------------------------------------
-
-void test4()
-{
-  // Create a relation with tuples valued 0 to a larger relationSize and perform  
-	// index tests on attributes of all three types (int, double, string)
-	std::cout << "---------------------" << std::endl;
-	std::cout << "test4_createmoreRelationForward" << std::endl;
-  createRelationForward(200000);
-	indexTests();
-	deleteRelation();
-}
-
-void test5()
-{
-	// Create a relation with tuples valued 0 to a larger relationSize in reverse order 
-	// and perform index tests on attributes of all three types (int, double, string)
-	std::cout << "----------------------" << std::endl;
-	std::cout << "test5_createmoreRelationBackward" << std::endl;
-	createRelationBackward(200000);
-	indexTests();
-	deleteRelation();
-}
-
-void test6()
-{
-	// Create a relation with tuples valued 0 to a larger relationSize in random order 
-	// and perform index tests on attributes of all three types (int, double, string)
-	std::cout << "--------------------" << std::endl;
-	std::cout << "test6_createRelationRandom" << std::endl;
-	createRelationRandom(20000);
-	indexTests();
-	deleteRelation();
-}
-
-void test7()
-{
-  // Create a relation with tuples valued 0 to relationSize in random order 
-	// and perform different tests on attributes of all three types (int, double, string)
-  std::cout << "--------------------" << std::endl;
-	std::cout << "test7_createRelationRandom_boundary" << std::endl;
-  createRelationRandom();
-  std::cout << "Create a B+ Tree index on the integer field" << std::endl;
-  BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple,i), INTEGER);
-  //run some different tests ranther than tests in indexTests() including some out of bound integer
-  checkPassFail(intScan(&index, 2000, GTE, 6000, LT), 3000);
-  checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1);
-  checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 0);
-  checkPassFail(intScan(&index, 5888, GT, 6000, LT), 0);
-  checkPassFail(intScan(&index, -5000, GT, 0, LT), 0);
-  checkPassFail(intScan(&index, -5000, GT, 0, LTE), 1);
-  checkPassFail(intScan(&index, -5000, GT, 10, LTE), 11);
-  checkPassFail(intScan(&index, -5000, GT, 100, LT), 100);
-	deleteRelation();
-}
-
 
 // -----------------------------------------------------------------------------
 // createRelationForward
@@ -442,7 +376,16 @@ void intTests()
 	checkPassFail(intScan(&index,0,GT,1,LT), 0)
 	checkPassFail(intScan(&index,300,GT,400,LT), 99)
 	checkPassFail(intScan(&index,3000,GTE,4000,LT), 1000)
+    // new added tests
     checkPassFail(intScan(&index,0,GTE,5000,LT), 5000)
+    checkPassFail(intScan(&index, 2000, GTE, 6000, LT), 3000)
+    checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1)
+    checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1)
+    checkPassFail(intScan(&index, 5888, GT, 6000, LT), 0)
+    checkPassFail(intScan(&index, -5000, GT, 0, LT), 0)
+    checkPassFail(intScan(&index, -5000, GT, 0, LTE), 1)
+    checkPassFail(intScan(&index, -5000, GT, 10, LTE), 11)
+    checkPassFail(intScan(&index, -5000, GT, 100, LT), 100)
 }
 
 int intScan(BTreeIndex * index, int lowVal, Operator lowOp, int highVal, Operator highOp)
