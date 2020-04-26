@@ -1,0 +1,38 @@
+Some extra tests:
+
+test4_boundTest_Random()
+– Added test which creates key-value pairs from 0 to relationSize which is defaulted to be 5000 in the random order.
+– Test if the output amount matches the input amount when scanning.
+– This test finds keys that are out of the range of input.
+
+• test5_boundTest_Forward()
+– Added test which creates key-value pairs from 0 to relationSize which is defaulted to be 5000 in the Forward order.
+– Test if the output amount matches the input amount when scanning.
+– This test finds keys that are out of the range of input.
+
+• test6_boundTest_Backward()
+– Added test which creates key-value pairs from 0 to relationSize which is defaulted to be 5000 in the Backward order.
+– Test if the output amount matches the input amount when scanning.
+– This test finds keys that are out of the range of input.
+
+• test7_int_CreateMoreRelation_Forward()
+– Added test which creates key-value pairs from 0 to a larger relationSize in the Forward order.
+– The relationSize is set to be 200000 to test splitting on non-leaf node.
+– Test if the output amount matches the input amount when scanning.
+
+• test8_int_CreateMoreRelation_Backward()
+– Added test which creates key-value pairs from 0 to a larger relationSize in the Backward order.
+– The relationSize is set to be 200000 to test splitting on non-leaf node.
+– Test if the output amount matches the input amount when scanning.
+
+• test9_int_CreateMoreRelation Random()
+– Added test which creates key-value pairs from 0 to a larger relationSize in the Random order.
+– The relationSize is set to be 200000 to test splitting on non-leaf node.
+– Test if the output amount matches the input amount when scanning.
+
+All the extra tests are in the main.cpp file.
+
+
+Report:
+
+The report is called "B_TreeImplementationReport.pdf", and it is located in the same directory as this outline.txt, to access with "./B_TreeImplementationReport.pdf"
