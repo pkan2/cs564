@@ -64,16 +64,24 @@ BufMgr * bufMgr = new BufMgr(100);
 // Forward declarations
 // -----------------------------------------------------------------------------
 
-void createRelationForward();
-void createRelationBackward();
-void createRelationRandom();
+void createRelationForward(int rel = relationSize);
+void createRelationBackward(int rel = relationSize);
+void createRelationRandom(int rel = relationSize);
 void intTests();
 int intScan(BTreeIndex *index, int lowVal, Operator lowOp, int highVal, Operator highOp);
 void indexTests();
+void boundaryTests();
 void test1();
 void test2();
 void test3();
+void test4_boundTest_Random();
+void test5_boundTest_Forward();
+void test6_boundTest_Backward();
+void test7_int_CreateMoreRelation_Forward();
+void test8_int_CreateMoreRelation_Backward();
+void test9_int_CreateMoreRelation_Random();
 void errorTests();
+void boundTests();
 void deleteRelation();
 
 int main(int argc, char **argv)
@@ -140,7 +148,13 @@ int main(int argc, char **argv)
 	test1();
 	test2();
 	test3();
-	//errorTests();
+  test4_boundTest_Random();
+  test5_boundTest_Forward();
+  test6_boundTest_Backward();
+  test7_int_CreateMoreRelation_Forward();
+  test8_int_CreateMoreRelation_Backward();
+  test9_int_CreateMoreRelation_Random();
+	errorTests();
 
   return 1;
 }
@@ -178,11 +192,78 @@ void test3()
 	deleteRelation();
 }
 
+void  test4_boundTest_Random()
+{
+  // Create a relation with tuples valued 0 to relationSize in random order and perform boundary tests 
+	// on attributes of all three types (int, double, string)
+  std::cout << "--------------------" << std::endl;
+	std::cout << "test4_boundTest_Random" << std::endl;
+  createRelationRandom();
+  boundaryTests();
+  deleteRelation();
+}
+
+void test5_boundTest_Forward()
+{
+  // Create a relation with tuples valued 0 to relationSize in forward order and perform boundary tests 
+	// on attributes of all three types (int, double, string)
+  std::cout << "--------------------" << std::endl;
+	std::cout << "test5_boundTest_Forward" << std::endl;
+  createRelationForward();
+  boundaryTests();
+  deleteRelation();
+}
+
+void test6_boundTest_Backward()
+{
+  // Create a relation with tuples valued 0 to relationSize in backward order and perform boundary tests 
+	// on attributes of all three types (int, double, string)
+  std::cout << "--------------------" << std::endl;
+	std::cout << "test6_boundTest_Backward" << std::endl;
+  createRelationBackward();
+  boundaryTests();
+  deleteRelation();
+}
+// -----------------------------------------------------------------------------
+// More Relation Pressure Test
+// -----------------------------------------------------------------------------
+void test7_int_CreateMoreRelation_Forward()
+{
+  // Create a relation with tuples valued 0 to a larger relationSize in a forward order and perform index tests 
+	// on attributes of all three types (int, double, string)
+  std::cout << "--------------------" << std::endl;
+	std::cout << "test7_int_CreateMoreRelation_Forward" << std::endl;
+  createRelationForward(200000);
+  indexTests();
+	deleteRelation();
+}
+
+void test8_int_CreateMoreRelation_Backward()
+{
+  // Create a relation with tuples valued 0 to a larger relationSize in a backward order and perform index tests 
+	// on attributes of all three types (int, double, string)
+  std::cout << "--------------------" << std::endl;
+	std::cout << "test8_int_CreateMoreRelation_Backward" << std::endl;
+  createRelationBackward(200000);
+  indexTests();
+	deleteRelation();
+}
+
+void test9_int_CreateMoreRelation_Random()
+{
+  // Create a relation with tuples valued 0 to a larger relationSize in a random order and perform index tests 
+	// on attributes of all three types (int, double, string)
+  std::cout << "--------------------" << std::endl;
+	std::cout << "test9_int_CreateMoreRelation_Random" << std::endl;
+  createRelationRandom(200000);
+  indexTests();
+	deleteRelation();
+}
 // -----------------------------------------------------------------------------
 // createRelationForward
 // -----------------------------------------------------------------------------
 
-void createRelationForward()
+void createRelationForward(int relationSize)
 {
 	std::vector<RecordId> ridVec;
   // destroy any old copies of relation file
@@ -231,7 +312,7 @@ void createRelationForward()
 // createRelationBackward
 // -----------------------------------------------------------------------------
 
-void createRelationBackward()
+void createRelationBackward(int relationSize)
 {
   // destroy any old copies of relation file
 	try
@@ -279,7 +360,7 @@ void createRelationBackward()
 // createRelationRandom
 // -----------------------------------------------------------------------------
 
-void createRelationRandom()
+void createRelationRandom(int relationSize)
 {
   // destroy any old copies of relation file
 	try
@@ -358,7 +439,24 @@ void indexTests()
   	}
   }
 }
+// -----------------------------------------------------------------------------
+// boundaryTests
+// -----------------------------------------------------------------------------
 
+void boundaryTests()
+{
+  if(testNum == 1)
+  {
+    boundTests();
+		try
+		{
+			File::remove(intIndexName);
+		}
+  	catch(FileNotFoundException e)
+  	{
+  	}
+  }
+}
 // -----------------------------------------------------------------------------
 // intTests
 // -----------------------------------------------------------------------------
@@ -377,17 +475,22 @@ void intTests()
 	checkPassFail(intScan(&index,300,GT,400,LT), 99)
 	checkPassFail(intScan(&index,3000,GTE,4000,LT), 1000)
     // new added tests
-    checkPassFail(intScan(&index,0,GTE,5000,LT), 5000)
-    checkPassFail(intScan(&index, 2000, GTE, 6000, LT), 3000)
-    checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1)
-    checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1)
-    checkPassFail(intScan(&index, 5888, GT, 6000, LT), 0)
-    checkPassFail(intScan(&index, -5000, GT, 0, LT), 0)
-    checkPassFail(intScan(&index, -5000, GT, 0, LTE), 1)
-    checkPassFail(intScan(&index, -5000, GT, 10, LTE), 11)
-    checkPassFail(intScan(&index, -5000, GT, 100, LT), 100)
+   
 }
-
+void boundTests()
+{
+  std::cout << "Create a B+ Tree index on the integer field" << std::endl;
+  BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple,i), INTEGER);
+  checkPassFail(intScan(&index,0,GTE,5000,LT), 5000)
+  checkPassFail(intScan(&index, 2000, GTE, 6000, LT), 3000)
+  checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1)
+  checkPassFail(intScan(&index, 4999, GTE, 6000, LT), 1)
+  checkPassFail(intScan(&index, 5888, GT, 6000, LT), 0)
+  checkPassFail(intScan(&index, -5000, GT, 0, LT), 0)
+  checkPassFail(intScan(&index, -5000, GT, 0, LTE), 1)
+  checkPassFail(intScan(&index, -5000, GT, 10, LTE), 11)
+  checkPassFail(intScan(&index, -5000, GT, 100, LT), 100)
+}
 int intScan(BTreeIndex * index, int lowVal, Operator lowOp, int highVal, Operator highOp)
 {
   RecordId scanRid;
